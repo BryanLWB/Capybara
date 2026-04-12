@@ -104,7 +104,7 @@ class CrispService {
       }
       
       // Set session segment to identify app users
-      FlutterCrispChat.setSessionSegments(segments: ['flux_app_user'], overwrite: false);
+      FlutterCrispChat.setSessionSegments(segments: ['app_user'], overwrite: false);
     } catch (e) {
       // Ignore session errors - session might not be loaded yet on first run
       debugPrint('Crisp session data setting skipped (not critical): $e');
@@ -186,7 +186,7 @@ class CrispService {
     }
     
     // Add segment
-    queryParams['data[segment]'] = 'flux_app_user';
+    queryParams['data[segment]'] = 'app_user';
     
     // Build the URL with parameters
     final uri = Uri.parse(webChatBaseUrl).replace(queryParameters: queryParams);

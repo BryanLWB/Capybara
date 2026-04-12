@@ -1,0 +1,96 @@
+{
+  "mappings": [
+    {
+      "app_route": "POST /api/app/v1/session/login",
+      "upstream_route": "POST /api/v1/passport/auth/login"
+    },
+    {
+      "app_route": "POST /api/app/v1/session/register",
+      "upstream_route": "POST /api/v1/passport/auth/register"
+    },
+    {
+      "app_route": "POST /api/app/v1/session/password/reset",
+      "upstream_route": "POST /api/v1/passport/auth/forget"
+    },
+    {
+      "app_route": "POST /api/app/v1/session/email-code",
+      "upstream_route": "POST /api/v1/passport/comm/sendEmailVerify"
+    },
+    {
+      "app_route": "GET /api/app/v1/public/config",
+      "upstream_route": "GET /api/v1/guest/comm/config"
+    },
+    {
+      "app_route": "GET /api/app/v1/catalog/plans",
+      "upstream_route": "GET /api/v1/guest/plan/fetch or GET /api/v1/user/plan/fetch"
+    },
+    {
+      "app_route": "GET /api/app/v1/account/profile",
+      "upstream_route": "GET /api/v1/user/info"
+    },
+    {
+      "app_route": "GET /api/app/v1/account/preferences",
+      "upstream_route": "GET /api/v1/user/comm/config"
+    },
+    {
+      "app_route": "GET /api/app/v1/account/subscription",
+      "upstream_route": "GET /api/v1/user/getSubscribe"
+    },
+    {
+      "app_route": "GET /api/app/v1/account/subscription/content",
+      "upstream_route": "GET subscribe_url from /api/v1/user/getSubscribe"
+    },
+    {
+      "app_route": "GET /api/app/v1/content/notices",
+      "upstream_route": "GET /api/v1/user/notice/fetch"
+    },
+    {
+      "app_route": "GET /api/app/v1/commerce/payment-methods",
+      "upstream_route": "GET /api/v1/user/order/getPaymentMethod"
+    },
+    {
+      "app_route": "GET /api/app/v1/commerce/orders",
+      "upstream_route": "GET /api/v1/user/order/fetch"
+    },
+    {
+      "app_route": "POST /api/app/v1/commerce/orders",
+      "upstream_route": "POST /api/v1/user/order/save"
+    },
+    {
+      "app_route": "POST /api/app/v1/commerce/orders/{order_ref}/checkout",
+      "upstream_route": "POST /api/v1/user/order/checkout"
+    },
+    {
+      "app_route": "GET /api/app/v1/commerce/orders/{order_ref}/status",
+      "upstream_route": "GET /api/v1/user/order/check"
+    },
+    {
+      "app_route": "POST /api/app/v1/commerce/orders/{order_ref}/cancel",
+      "upstream_route": "POST /api/v1/user/order/cancel"
+    },
+    {
+      "app_route": "GET /api/app/v1/referrals/overview",
+      "upstream_route": "GET /api/v1/user/invite/fetch"
+    },
+    {
+      "app_route": "GET /api/app/v1/referrals/records",
+      "upstream_route": "GET /api/v1/user/invite/details"
+    },
+    {
+      "app_route": "POST /api/app/v1/referrals/codes",
+      "upstream_route": "GET /api/v1/user/invite/save"
+    },
+    {
+      "app_route": "POST /api/app/v1/rewards/redeem",
+      "upstream_route": "POST /api/v1/user/gift-card/redeem"
+    },
+    {
+      "app_route": "GET /api/app/v1/client/config",
+      "upstream_route": "GET /api/v1/client/app/getConfig?token=..."
+    },
+    {
+      "app_route": "GET /api/app/v1/client/version",
+      "upstream_route": "GET /api/v1/client/app/getVersion?token=..."
+    }
+  ]
+}

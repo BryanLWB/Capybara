@@ -22,7 +22,7 @@ class RemoteConfigService {
   ];
 
   /// 默认 API 域名（当 OSS 配置获取失败时使用）
-  /// TODO: Replace with your V2Board API domain
+  /// TODO: Replace with your own app API domain
   static const String _defaultDomain = 'https://your-api-domain.com';
 
   /// 配置缓存有效期（小时）
@@ -35,7 +35,7 @@ class RemoteConfigService {
   static const String _configCacheKey = 'remote_config_cache';
   static const String _configVersionKey = 'remote_config_version';
   static const String _lastFetchTimeKey = 'remote_config_last_fetch';
-  static const String _activeDomainKey = 'remote_config_active_domain_v2';
+  static const String _activeDomainKey = 'remote_config_active_domain_app_api_v1';
 
   static RemoteConfig? _cachedConfig;
   static String? _activeDomain;

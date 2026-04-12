@@ -87,26 +87,29 @@ class InviteCode {
 
 class InviteDetail {
   final int id;
-  final int commissionStatus; // 0待确认1发放中2有效3无效
-  final num commissionBalance;
+  final num amount;
+  final String? tradeNo;
+  final num? orderAmount;
+  final String? statusText;
   final int createdAt;
-  final int updatedAt;
 
   InviteDetail({
     required this.id,
-    required this.commissionStatus,
-    required this.commissionBalance,
+    required this.amount,
+    this.tradeNo,
+    this.orderAmount,
+    this.statusText,
     required this.createdAt,
-    required this.updatedAt,
   });
 
   factory InviteDetail.fromJson(Map<String, dynamic> json) {
     return InviteDetail(
       id: json['id'] as int? ?? 0,
-      commissionStatus: json['commission_status'] as int? ?? 0,
-      commissionBalance: json['commission_balance'] as num? ?? 0,
+      amount: json['amount'] as num? ?? 0,
+      tradeNo: json['trade_no'] as String?,
+      orderAmount: json['order_amount'] as num?,
+      statusText: json['status_text'] as String?,
       createdAt: json['created_at'] as int? ?? 0,
-      updatedAt: json['updated_at'] as int? ?? 0,
     );
   }
 }

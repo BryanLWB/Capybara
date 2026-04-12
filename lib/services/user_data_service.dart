@@ -1,5 +1,5 @@
 import '../models/user_info.dart';
-import 'v2board_api.dart';
+import 'panel_api.dart';
 
 /// 用户数据缓存服务
 /// 减少重复 API 请求，提升页面切换速度
@@ -8,7 +8,7 @@ class UserDataService {
   factory UserDataService() => _instance;
   UserDataService._internal();
 
-  final V2BoardApi _api = V2BoardApi();
+  final PanelApi _api = PanelApi();
 
   // 缓存数据
   UserInfo? _userInfo;
@@ -86,7 +86,10 @@ class UserDataService {
     final response = await _api.getPlans();
     final data = response['data'];
     if (data is List) {
-      _plans = data.map((e) => e as Map<String, dynamic>).toList();
+      _plans = data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     } else {
       _plans = [];
     }
@@ -104,7 +107,10 @@ class UserDataService {
     final response = await _api.fetchNotice();
     final data = response['data'];
     if (data is List) {
-      _notices = data.map((e) => e as Map<String, dynamic>).toList();
+      _notices = data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     } else {
       _notices = [];
     }

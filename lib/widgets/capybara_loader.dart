@@ -4,13 +4,13 @@ import '../theme/app_colors.dart';
 
 import '../l10n/generated/app_localizations.dart';
 
-class FluxLoader extends StatefulWidget {
+class CapybaraLoader extends StatefulWidget {
   final double size;
   final Color? color;
   final String? label;
   final bool showTips;
 
-  const FluxLoader({
+  const CapybaraLoader({
     super.key,
     this.size = 40,
     this.color,
@@ -19,10 +19,10 @@ class FluxLoader extends StatefulWidget {
   });
 
   @override
-  State<FluxLoader> createState() => _FluxLoaderState();
+  State<CapybaraLoader> createState() => _CapybaraLoaderState();
 }
 
-class _FluxLoaderState extends State<FluxLoader>
+class _CapybaraLoaderState extends State<CapybaraLoader>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   int _tipIndex = 0;
@@ -89,7 +89,7 @@ class _FluxLoaderState extends State<FluxLoader>
             animation: _controller,
             builder: (context, child) {
               return CustomPaint(
-                painter: _FluxPainter(
+                painter: _CapybaraPainter(
                   animation: _controller,
                   color: widget.color ?? AppColors.accent,
                 ),
@@ -121,11 +121,11 @@ class _FluxLoaderState extends State<FluxLoader>
   }
 }
 
-class _FluxPainter extends CustomPainter {
+class _CapybaraPainter extends CustomPainter {
   final Animation<double> animation;
   final Color color;
 
-  _FluxPainter({required this.animation, required this.color})
+  _CapybaraPainter({required this.animation, required this.color})
       : super(repaint: animation);
 
   @override
@@ -195,5 +195,5 @@ class _FluxPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_FluxPainter oldDelegate) => true;
+  bool shouldRepaint(_CapybaraPainter oldDelegate) => true;
 }

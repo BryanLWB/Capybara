@@ -2,7 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../theme/app_colors.dart';
-import '../services/v2board_api.dart';
+import '../services/panel_api.dart';
 
 class RedeemGiftDialog extends StatefulWidget {
   final VoidCallback onSuccess;
@@ -50,7 +50,7 @@ class _RedeemGiftDialogState extends State<RedeemGiftDialog> with SingleTickerPr
     });
 
     try {
-      final api = V2BoardApi();
+      final api = PanelApi();
       final success = await api.redeemGiftCard(code);
 
       if (success) {

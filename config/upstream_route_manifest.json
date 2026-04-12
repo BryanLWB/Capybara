@@ -1,0 +1,26 @@
+{
+  "required_routes": [
+    "/auth/register",
+    "/auth/login",
+    "/auth/forget",
+    "/comm/sendEmailVerify",
+    "/plan/fetch",
+    "/comm/config",
+    "/user/comm/config",
+    "/user/info",
+    "/user/getSubscribe",
+    "/user/notice/fetch",
+    "/user/order/getPaymentMethod",
+    "/user/order/save",
+    "/user/order/checkout",
+    "/user/order/check",
+    "/user/order/cancel",
+    "/user/order/fetch",
+    "/user/invite/fetch",
+    "/user/invite/details",
+    "/user/invite/save",
+    "/user/gift-card/redeem",
+    "/client/app/getConfig",
+    "/client/app/getVersion"
+  ]
+}

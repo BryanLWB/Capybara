@@ -14,11 +14,11 @@ import 'services/remote_config_service.dart';
 import 'services/tray_service.dart';
 import 'services/unified_vpn_service.dart';
 import 'services/user_data_service.dart';
-import 'services/v2board_api.dart';
+import 'services/panel_api.dart';
 import 'services/v2ray_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/asset_utils.dart';
-import 'widgets/flux_splash.dart';
+import 'widgets/capybara_splash.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,7 +60,7 @@ void main() async {
       center: true,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      title: 'Flux',
+      title: 'Capybara',
     );
     
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -93,7 +93,7 @@ void main() async {
     });
   }
   
-  runApp(const FluxApp());
+  runApp(const CapybaraApp());
 }
 
 Future<void> _registerExitCleanup() async {
@@ -143,13 +143,13 @@ class _AppCloseListener extends WindowListener {
   }
 }
 
-class FluxApp extends StatelessWidget {
-  const FluxApp({super.key});
+class CapybaraApp extends StatelessWidget {
+  const CapybaraApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flux',
+      title: 'Capybara',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
       // 多语言配置
@@ -173,7 +173,7 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  final _api = V2BoardApi();
+  final _api = PanelApi();
   final _config = ApiConfig();
   bool _authed = false;
   bool _isChecking = true;
@@ -189,13 +189,15 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkAuth() async {
-    await _config.refreshAuthCache();
-    final token = await _config.getToken();
-    final authData = await _config.getAuthData();
+    await _config.refreshSessionCache();
+    final session = await _config.getSessionToken();
     
     bool authResult = false;
     
-    if (token == null && authData == null) {
+    if (session == null || session.isEmpty) {
+      if (await _config.hasLegacyAuth()) {
+        await _config.clearAuth();
+      }
       authResult = false;
     } else {
       try {
@@ -240,7 +242,7 @@ class _AuthGateState extends State<AuthGate> {
   Widget build(BuildContext context) {
     // 检查中显示 Flutter 启动动画
     if (_isChecking) {
-      return const FluxSplash();
+      return const CapybaraSplash();
     }
     if (!_authed) {
       return AuthScreen(

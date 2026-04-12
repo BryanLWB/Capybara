@@ -16,9 +16,9 @@ enum ProxyRoutingMode { global, rule }
 
 /// V2ray服务 - 全平台统一入口
 class V2rayService {
-  static const MethodChannel _channel = MethodChannel('com.example.flux/v2ray');
+  static const MethodChannel _channel = MethodChannel('app.capybara.client/v2ray');
   static const EventChannel _statusChannel = EventChannel(
-    'com.example.flux/v2ray_status',
+    'app.capybara.client/v2ray_status',
   );
   static Stream<bool>? _statusStream;
 

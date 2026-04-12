@@ -2,28 +2,28 @@
 
 <div align="center">
 
-# ⚡ Flux
+# ⚡ Capybara
 
-### White-Label Client Solution for V2Board Operators (Android / iOS / Windows / macOS)
+### White-Label Proxy Client Solution (Android / iOS / Windows / macOS)
 
 **Dual Core | Process Daemon | Payment Integration | Business Ready**
 
 Change one API URL → Build → Get Your Branded App
 
-[![Stars](https://img.shields.io/github/stars/flux-apphub/flux?style=flat-square&logo=github)](https://github.com/flux-apphub/flux/stargazers)
-[![Forks](https://img.shields.io/github/forks/flux-apphub/flux?style=flat-square&logo=github)](https://github.com/flux-apphub/flux/network/members)
-[![License](https://img.shields.io/github/license/flux-apphub/flux?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/stargazers)
+[![Forks](https://img.shields.io/github/forks/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/network/members)
+[![License](https://img.shields.io/github/license/your-org/capybara?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
-💬 [Join Telegram Group](https://t.me/+62Otr015kSs1YmNk) · 📞 [Business @fluxdeveloper](https://t.me/fluxdeveloper)
+💬 Replace with your community link · 📞 Replace with your business contact
 
 </div>
 
 ---
 
-## 🚀 Why Flux?
+## 🚀 Why Capybara?
 
-More than just a proxy client, Flux is a revenue-generating tool for service providers.
+More than just a proxy client, Capybara is a revenue-generating tool for service providers.
 
 ### 💎 Commerce Features (Grow Revenue)
 - **Full Payment Suite**: Integrated Alipay, WeChat, Stripe, and USDT via Web Payment Jump.
@@ -42,22 +42,22 @@ More than just a proxy client, Flux is a revenue-generating tool for service pro
 - **Encryption**: AES-128 encryption for sensitive config and API parameters.
 - **Sanitized**: Zero hardcoded secrets or domains. Ready for public repo.
 
-### 🆚 Why Flux? (Comparison)
+### 🆚 Why Capybara? (Comparison)
 
-| Feature | ⚡ Flux | 🔴 v2rayNG | 🟡 Clash | 🔵 Shadowrocket |
+| Feature | ⚡ Capybara | 🔴 v2rayNG | 🟡 Clash | 🔵 Shadowrocket |
 | :--- | :---: | :---: | :---: | :---: |
 | **Cross-Platform** | **✅ 5 OS** | ❌ Android Only | ⚠️ Fragmented | ❌ iOS Only |
-| **V2Board API** | **✅ Native** | ❌ Manual Import | ❌ Manual Import | ❌ Manual Import |
+| **Panel Backend** | **✅ Integrated** | ❌ Manual Import | ❌ Manual Import | ❌ Manual Import |
 | **Flutter UI** | **✅ Material 3** | ❌ Native Android | ❌ Web Style | ❌ Native iOS |
 | **White-Label** | **✅ Ready-to-go** | ❌ Source Change | ❌ Hard | ❌ Impossible |
 | **Commercial** | **✅ MIT License** | ✅ | ⚠️ | ❌ |
 | **Open Source** | **✅ 100%** | ✅ | ⚠️ Partial | ❌ |
 
-👉 **Simply put: Flux is the only "Ready-to-use, White-label, Commercial" V2Board client solution.**
+👉 **Simply put: Capybara is a ready-to-use, white-label, commercial proxy client solution.**
 
-### 👥 Who is Flux For?
+### 👥 Who is Capybara For?
 
-| User Type | Your Need | How Flux Helps |
+| User Type | Your Need | How Capybara Helps |
 | :--- | :--- | :--- |
 | 🛫 **Airport Owner** | Want a branded client fast | ✅ Change 1 line, build in 5 mins |
 | 🧑💻 **Developer** | Want a clean Flutter proxy project | ✅ MIT License, commercial ready |
@@ -74,11 +74,11 @@ More than just a proxy client, Flux is a revenue-generating tool for service pro
 
 | Dashboard | Node List | Profile |
 | :---: | :---: | :---: |
-| <img src="assets/images/screenshots/1.png" alt="Flux VPN Dashboard" width="200"> | <img src="assets/images/screenshots/2.png" alt="Flux Server List" width="200"> | <img src="assets/images/screenshots/3.png" alt="Flux User Profile" width="200"> |
+| <img src="assets/images/screenshots/1.png" alt="Capybara Dashboard" width="200"> | <img src="assets/images/screenshots/2.png" alt="Capybara Server List" width="200"> | <img src="assets/images/screenshots/3.png" alt="Capybara User Profile" width="200"> |
 
 | Windows / MacOS Desktop |
 | :---: |
-| <img src="assets/images/screenshots/6.png" alt="Flux Desktop Client Windows" width="600"> |
+| <img src="assets/images/screenshots/6.png" alt="Capybara Desktop Client Windows" width="600"> |
 
 </details>
 
@@ -101,8 +101,8 @@ Powered by **SingBox + V2Ray** Dual Core.
 
 ```bash
 # 1. Clone
-git clone https://github.com/flux-apphub/flux.git
-cd flux
+git clone https://github.com/your-org/capybara.git
+cd capybara
 
 # 2. Install dependencies
 flutter pub get
@@ -124,7 +124,7 @@ flutter run
 
 ## 📖 Admin Integration Guide
 
-Follow these steps to customize Flux for your service.
+Follow these steps to customize Capybara for your service.
 
 ### Step 1: Basic Config (Required)
 
@@ -138,13 +138,13 @@ Follow these steps to customize Flux for your service.
     *   *Name*: Edit `pubspec.yaml` `name` and platform specific files.
     *   *Icon*: Replace `assets/images/app_icon.png` (1024px), run `flutter pub run flutter_launcher_icons`.
 
-### Step 2: Backend Encryption (Anti-Abuse)
+### Step 2: App API And Session Layer (Required)
 
-Flux encrypts sensitive params (e.g., email verify) using AES-128.
+The current version uses the in-repo app API layer to hide upstream panel details and keep sessions opaque on the client.
 
-1.  Open `lib/services/v2board_api.dart`.
-2.  Find `_emailVerifyKey`, set a **16-char** random string.
-3.  Ensure backend supports decryption, or set `useEncryption = false`.
+1.  Configure the upstream endpoint and session settings used by `backend/app_api/lib/src/config/service_config.dart`.
+2.  Provide runtime values such as `UPSTREAM_BASE_URL`, `APP_SESSION_TTL_SECONDS`, and `REDIS_URL`.
+3.  Point the frontend domain entry to your app API instead of exposing the upstream panel directly.
 
 ### Step 3: OSS Remote Config (Recommended)
 
@@ -249,11 +249,11 @@ If you need professional customization:
 | 🎨 **UI Customization** | Custom colors, layout changes, exclusive features |
 | 🔐 **Auth System** | Device authorization, Multi-device management, Expiry alerts |
 
-Contact **[@fluxdeveloper](https://t.me/fluxdeveloper)** for support.
+Replace this line with your own support contact.
 
 ### ☕ Support Open Source
 
-If Flux helps you, consider a donation:
+If you want to keep a donation section, replace it with your own payment details:
 
 | USDT (TRC20) | USDC (Arbitrum) | ETH (Arbitrum) |
 | :---: | :---: | :---: |
@@ -265,7 +265,7 @@ If Flux helps you, consider a donation:
 
 *   [Sing-box](https://github.com/SagerNet/sing-box) - Universal Proxy Platform
 *   [Xray-core](https://github.com/XTLS/Xray-core) - Network Tool
-*   [V2Board](https://github.com/v2board/v2board) - Admin Panel
+*   Upstream panel implementation - keep this aligned with your deployed backend version
 *   [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) - High Performance TUN
 
 ---
@@ -275,4 +275,4 @@ If Flux helps you, consider a donation:
 MIT License - Free for commercial use.
 
 ---
-> **Tags**: V2Board Client, White-label VPN, Flutter Proxy, Commercial VPN Source, Airport Business, Anti-Censorship, Traffic Monetization
+> **Tags**: White-label VPN, Flutter Proxy, Commercial VPN Source, Airport Business, Anti-Censorship, Traffic Monetization

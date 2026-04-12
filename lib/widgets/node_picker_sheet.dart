@@ -6,7 +6,7 @@ import '../models/server_node.dart';
 import '../services/subscription_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/node_utils.dart';
-import 'flux_loader.dart';
+import 'capybara_loader.dart';
 
 class NodePickerSheet extends StatefulWidget {
   final ValueChanged<ServerNode> onNodeSelected;
@@ -82,7 +82,7 @@ class _NodePickerSheetState extends State<NodePickerSheet>
                 children: [
                   _buildHeader(context),
                   if (_isLoading)
-                    const Expanded(child: Center(child: FluxLoader(size: 30)))
+                    const Expanded(child: Center(child: CapybaraLoader(size: 30)))
                   else if (_nodes.isEmpty)
                     Expanded(
                       child: Center(

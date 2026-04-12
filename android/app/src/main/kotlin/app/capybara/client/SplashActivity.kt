@@ -1,4 +1,4 @@
-package com.example.flux
+package app.capybara.client
 
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
@@ -16,7 +16,7 @@ import android.view.animation.LinearInterpolator
 import android.widget.TextView
 import kotlin.math.cos
 import kotlin.math.sin
-import com.example.flux.R
+import app.capybara.client.R
 
 class SplashActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())

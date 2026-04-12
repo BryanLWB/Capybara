@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
     
     <application
-        android:label="flux"
+        android:label="Capybara"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -19,7 +19,7 @@
         android:enableOnBackInvokedCallback="true">
         <!-- MainActivity 是唯一的启动器，Flutter 内部处理启动动画 -->
         <activity
-            android:name="com.example.flux.MainActivity"
+            android:name="app.capybara.client.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
@@ -38,7 +38,7 @@
         
         <!-- VPN 服务 -->
         <service
-            android:name="com.example.flux.FluxVpnService"
+            android:name="app.capybara.client.CapybaraVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false">
             <intent-filter>

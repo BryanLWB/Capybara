@@ -1,4 +1,4 @@
-package com.example.flux
+package app.capybara.client
 
 import android.app.Service
 import android.content.Context
@@ -17,7 +17,7 @@ import java.io.File
  * VPN 服务 - 基于 v2rayNG 的实现
  * 将 VPN 流量转发到本地 SOCKS5 代理 (127.0.0.1:10808)
  */
-class FluxVpnService : VpnService() {
+class CapybaraVpnService : VpnService() {
     private var mInterface: ParcelFileDescriptor? = null
     private var isRunning = false
     private var tun2SocksService: Tun2SocksControl? = null
@@ -48,9 +48,9 @@ class FluxVpnService : VpnService() {
     }
     
     companion object {
-        private const val TAG = "Flux"
-        const val ACTION_START = "com.example.flux.VPN_START"
-        const val ACTION_STOP = "com.example.flux.VPN_STOP"
+        private const val TAG = "Capybara"
+        const val ACTION_START = "app.capybara.client.VPN_START"
+        const val ACTION_STOP = "app.capybara.client.VPN_STOP"
         private const val VPN_ADDRESS = "10.0.0.2"
         private const val VPN_ROUTE = "0.0.0.0"
         private const val VPN_MTU = 1450  // 移动网络下适当提高 MTU，减少分片提升吞吐
@@ -64,13 +64,13 @@ class FluxVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "FluxVpnService onCreate")
+        Log.d(TAG, "CapybaraVpnService onCreate")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopVpn()
-        Log.d(TAG, "FluxVpnService onDestroy")
+        Log.d(TAG, "CapybaraVpnService onDestroy")
     }
 
     override fun onRevoke() {
@@ -201,7 +201,7 @@ class FluxVpnService : VpnService() {
         builder.addDnsServer("1.1.1.1")  // Cloudflare DNS（备选）
 
         // 设置会话名称
-        builder.setSession("Flux VPN")
+        builder.setSession("Capybara VPN")
     }
 
     /**
@@ -314,7 +314,7 @@ class TProxyService(
 ) : Tun2SocksControl {
     
     companion object {
-        private const val TAG = "Flux"
+        private const val TAG = "Capybara"
         private const val SOCKS_PROXY_HOST = "127.0.0.1"
         private const val SOCKS_PROXY_PORT = 10808
         private const val TUN_MTU = 1450

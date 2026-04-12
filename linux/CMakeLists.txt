@@ -4,10 +4,10 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "flux")
+set(BINARY_NAME "capybara")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.example.flux")
+set(APPLICATION_ID "app.capybara.client")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -139,8 +139,8 @@ endif()
 # Desktop entry & dock icon (Linux taskbar/dash)
 set(APP_ID "${APPLICATION_ID}")
 set(APP_ICON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../assets/icons/app_icon.png")
-set(APP_DESKTOP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/flux.desktop.in")
-set(APP_DESKTOP_OUT "${PROJECT_BINARY_DIR}/flux.desktop")
+set(APP_DESKTOP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/capybara.desktop.in")
+set(APP_DESKTOP_OUT "${PROJECT_BINARY_DIR}/capybara.desktop")
 configure_file(${APP_DESKTOP_SRC} ${APP_DESKTOP_OUT} @ONLY)
 
 install(FILES "${APP_DESKTOP_OUT}"

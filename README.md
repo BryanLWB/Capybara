@@ -2,31 +2,31 @@
 
 <div align="center">
 
-# ⚡ Flux
+# ⚡ Capybara
 
-### V2Board 机场商业化客户端解决方案 (Android / iOS / Windows / macOS)
+### 可白标代理客户端解决方案 (Android / iOS / Windows / macOS)
 
 **双内核架构 | 进程守护 | 支付集成 | 商业化闭环**
 
 改一行 API 地址 → 编译 → 拥有专属品牌 App
 
-[![Stars](https://img.shields.io/github/stars/flux-apphub/flux?style=flat-square&logo=github)](https://github.com/flux-apphub/flux/stargazers)
-[![Forks](https://img.shields.io/github/forks/flux-apphub/flux?style=flat-square&logo=github)](https://github.com/flux-apphub/flux/network/members)
-[![License](https://img.shields.io/github/license/flux-apphub/flux?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/stargazers)
+[![Forks](https://img.shields.io/github/forks/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/network/members)
+[![License](https://img.shields.io/github/license/your-org/capybara?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
-💬 [加入 Telegram 群组](https://t.me/+62Otr015kSs1YmNk) · 📞 [商务合作 @fluxdeveloper](https://t.me/fluxdeveloper)
+💬 请替换为你的社区入口 · 📞 请替换为你的商务联系方式
 
 </div>
 
 ---
 
-## 🚀 为什么选择 Flux？
+## 🚀 为什么选择 Capybara？
 
 本项目不仅仅是一个客户端，而是为机场站长打造的**营收工具**。
 
 ### 💎 商业化闭环 (增长核心)
-- **支付系统**: 完整支持 V2Board 支付流程 (支付宝/微信/Stripe/USDT)，集成网页支付跳转。
+- **支付系统**: 支持常见支付流程 (支付宝/微信/Stripe/USDT)，集成网页支付跳转。
 - **订单管理**: 支持查看订单详情、取消订单、无需跳转直接支付。
 - **邀请系统**: 支持邀请码生成、查看返利记录、申请提现，助力用户裂变。
 - **客服集成**: 内置 Crisp 在线客服，支持工单与实时聊天，提升售后体验。
@@ -42,22 +42,22 @@
 - **配置加密**: 敏感配置 (API, OSS) 支持 AES-128 加密，防止恶意抓包。
 - **隐私脱敏**: 代码库已完全脱敏，无硬编码域名或 Key，开箱即用。
 
-### 🆚 为什么选 Flux？（对比竞品）
+### 🆚 为什么选 Capybara？（对比竞品）
 
-| 特性 | ⚡ Flux | 🔴 v2rayNG | 🟡 Clash | 🔵 Shadowrocket |
+| 特性 | ⚡ Capybara | 🔴 v2rayNG | 🟡 Clash | 🔵 Shadowrocket |
 | :--- | :---: | :---: | :---: | :---: |
 | **跨平台** | **✅ 5 端** | ❌ 仅 Android | ⚠️ 多客户端 | ❌ 仅 iOS |
-| **V2Board API** | **✅ 原生支持** | ❌ 需手动导入 | ❌ 需手动导入 | ❌ 需手动导入 |
+| **面板后端接入** | **✅ 已集成** | ❌ 需手动导入 | ❌ 需手动导入 | ❌ 需手动导入 |
 | **Flutter UI** | **✅ Material 3** | ❌ 原生安卓 | ❌ Web 风格 | ❌ 原生 iOS |
 | **白标定制** | **✅ 开箱即用** | ❌ 需改源码 | ❌ 困难 | ❌ 不可能 |
 | **可商用** | **✅ MIT 协议** | ✅ | ⚠️ | ❌ |
 | **开源** | **✅ 100%** | ✅ | ⚠️ 部分 | ❌ |
 
-👉 **简单说：Flux 是目前唯一一个「开箱即用、可白标、可商用」的 V2Board 客户端方案。**
+👉 **简单说：Capybara 是一套可白标、可商用的代理客户端方案。**
 
-### 👥 Flux 适合谁用？
+### 👥 Capybara 适合谁用？
 
-| 用户类型 | 你的需求 | Flux 能帮你 |
+| 用户类型 | 你的需求 | Capybara 能帮你 |
 | :--- | :--- | :--- |
 | 🛫 **机场站长** | 想快速出一个专属品牌客户端 | ✅ 改一行代码，5 分钟编译出 App |
 | 🧑💻 **二次开发者** | 想 fork 一个干净的 Flutter 代理项目 | ✅ MIT 协议，可自由商用 |
@@ -74,17 +74,17 @@
 
 | 首页 (Home) | 节点 (Pro) | 个人 (Me) |
 | :---: | :---: | :---: |
-| <img src="assets/images/screenshots/1.png" alt="Flux VPN 首页 Dashboard" width="200"> | <img src="assets/images/screenshots/2.png" alt="Flux 节点列表 Node List" width="200"> | <img src="assets/images/screenshots/3.png" alt="Flux 个人中心 Profile" width="200"> |
+| <img src="assets/images/screenshots/1.png" alt="Capybara 首页 Dashboard" width="200"> | <img src="assets/images/screenshots/2.png" alt="Capybara 节点列表 Node List" width="200"> | <img src="assets/images/screenshots/3.png" alt="Capybara 个人中心 Profile" width="200"> |
 
 | Windows / MacOS 桌面端 |
 | :---: |
-| <img src="assets/images/screenshots/6.png" alt="Flux Windows Desktop Client" width="600"> |
+| <img src="assets/images/screenshots/6.png" alt="Capybara Windows Desktop Client" width="600"> |
 
 </details>
 
 ## 🛠 支持协议 (Tech Specs)
 
-Flux 采用 **SingBox + V2Ray** 双核驱动，支持市面主流协议：
+Capybara 采用 **SingBox + V2Ray** 双核驱动，支持市面主流协议：
 
 | 协议 (Protocol) | 状态 | 关键词 (Keywords) |
 |:---|:---:|:---|
@@ -101,8 +101,8 @@ Flux 采用 **SingBox + V2Ray** 双核驱动，支持市面主流协议：
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/flux-apphub/flux.git
-cd flux
+git clone https://github.com/your-org/capybara.git
+cd capybara
 
 # 2. 安装依赖
 flutter pub get
@@ -124,7 +124,7 @@ flutter run
 
 ## 📖 站长对接指南 (详细版)
 
-Flux 提供了一整套定制化方案，请按以下步骤完成配置。
+Capybara 提供了一整套定制化方案，请按以下步骤完成配置。
 
 ### 第一步：基础配置 (必做)
 
@@ -138,13 +138,13 @@ Flux 提供了一整套定制化方案，请按以下步骤完成配置。
     *   *名称*: 修改 `pubspec.yaml` `name` 及各平台配置文件 (AndroidManifest.xml, Info.plist 等)。
     *   *图标*: 替换 `assets/images/app_icon.png` (1024x1024)，运行 `flutter pub run flutter_launcher_icons`。
 
-### 第二步：后端加密配置 (防止滥用)
+### 第二步：中间层与会话配置 (必做)
 
-Flux 默认对部分敏感接口参数 (如邮件验证) 进行 AES-128 加密。
+当前版本默认通过仓库内中间层对接上游面板，不再建议前端直接暴露上游接口细节。
 
-1.  打开 `lib/services/v2board_api.dart`。
-2.  找到 `_emailVerifyKey`，填入一个 **16位** 随机字符串。
-3.  确保你的后端支持解密，或者将 `useEncryption` 设为 `false` 关闭此功能。
+1.  配置 `backend/app_api/lib/src/config/service_config.dart` 中使用的上游地址与会话参数。
+2.  确保发布环境提供 `UPSTREAM_BASE_URL`、`APP_SESSION_TTL_SECONDS`、`REDIS_URL` 等运行参数。
+3.  前端域名入口统一指向你的 App API，而不是直接指向面板域名。
 
 ### 第三步：OSS 远程配置 (强烈推荐)
 
@@ -250,11 +250,11 @@ lib/
 | 🎨 **UI 定制** | 改配色、改布局、加独家功能 (如流量悬浮窗) |
 | 🔐 **授权系统** | 加入设备授权验证、多设备管理、到期弹窗提醒 |
 
-由 **[@fluxdeveloper](https://t.me/fluxdeveloper)** 提供技术支持。
+请将这里替换为你自己的技术支持信息。
 
 ### ☕ 赞助开源
 
-如果你觉得 Flux 不错，欢迎请作者喝杯咖啡：
+如果你需要保留赞助信息，请替换为你自己的收款方式：
 
 | USDT (TRC20) | USDC (Arbitrum) | ETH (Arbitrum) |
 | :---: | :---: | :---: |
@@ -266,7 +266,7 @@ lib/
 
 *   [Sing-box](https://github.com/SagerNet/sing-box) - 通用代理平台 (核心引擎)
 *   [Xray-core](https://github.com/XTLS/Xray-core) - 强大的网络工具
-*   [V2Board](https://github.com/v2board/v2board) - 机场面板
+*   上游面板实现 - 请按你的部署版本维护同步
 *   [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) - 高性能 TUN 模式实现
 
 ---
@@ -276,4 +276,4 @@ lib/
 MIT License - 可自由商用、修改与分发。
 
 ---
-> **Tags**: V2Board客户端, 机场专属App, Flutter代理客户端, 白标VPN, 开源代理工具, 科学上网, 机场托管, 流量变现
+> **Tags**: 机场专属App, Flutter代理客户端, 白标VPN, 开源代理工具, 科学上网, 机场托管, 流量变现

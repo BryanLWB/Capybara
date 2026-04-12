@@ -1,4 +1,4 @@
-package com.example.flux
+package app.capybara.client
 
 import android.content.Intent
 import android.net.VpnService
@@ -19,8 +19,8 @@ import java.io.InputStreamReader
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.flux/v2ray"
-    private val STATUS_CHANNEL = "com.example.flux/v2ray_status"
+    private val CHANNEL = "app.capybara.client/v2ray"
+    private val STATUS_CHANNEL = "app.capybara.client/v2ray_status"
     private var isV2rayRunning = false
     private var xrayProcess: Process? = null
     // private var hysteria2Process: Process? = null // Removed
@@ -29,7 +29,7 @@ class MainActivity : FlutterActivity() {
     private var isGeoDataReady = false
     
     companion object {
-        private const val TAG = "Flux"
+        private const val TAG = "Capybara"
         private const val REQUEST_VPN_PERMISSION = 1
         @Volatile
         private var vpnStatusSink: EventChannel.EventSink? = null
@@ -78,7 +78,7 @@ class MainActivity : FlutterActivity() {
                     }.start()
                 }
                 "isConnected" -> {
-                    result.success(FluxVpnService.isVpnRunning)
+                    result.success(CapybaraVpnService.isVpnRunning)
                 }
                 else -> {
                     result.notImplemented()
@@ -90,7 +90,7 @@ class MainActivity : FlutterActivity() {
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     vpnStatusSink = events
-                    events?.success(FluxVpnService.isVpnRunning)
+                    events?.success(CapybaraVpnService.isVpnRunning)
                 }
 
                 override fun onCancel(arguments: Any?) {
@@ -322,8 +322,8 @@ class MainActivity : FlutterActivity() {
     
     private fun startVpnService() {
         try {
-            val intent = Intent(this, FluxVpnService::class.java).apply {
-                action = FluxVpnService.ACTION_START
+            val intent = Intent(this, CapybaraVpnService::class.java).apply {
+                action = CapybaraVpnService.ACTION_START
             }
             startService(intent)
         } catch (e: Exception) {
@@ -333,8 +333,8 @@ class MainActivity : FlutterActivity() {
     
     private fun stopVpnService() {
         try {
-            val intent = Intent(this, FluxVpnService::class.java).apply {
-                action = FluxVpnService.ACTION_STOP
+            val intent = Intent(this, CapybaraVpnService::class.java).apply {
+                action = CapybaraVpnService.ACTION_STOP
             }
             startService(intent)
             stopService(intent)

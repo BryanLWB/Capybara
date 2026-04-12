@@ -16,8 +16,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let conf = self.protocolConfiguration as? NETunnelProviderProtocol,
               let providerConfig = conf.providerConfiguration,
               let configStr = providerConfig["config"] as? String else {
-            NSLog("[Flux] Missing VPN configuration")
-            completionHandler(NSError(domain: "com.example.flux", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing config"]))
+            NSLog("[Capybara] Missing VPN configuration")
+            completionHandler(NSError(domain: "app.capybara.client", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing config"]))
             return
         }
         
@@ -26,7 +26,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         /*
          LibXray.shared.start(config: configStr)
          */
-        NSLog("[Flux] Starting Tunnel with config length: \(configStr.count)")
+        NSLog("[Capybara] Starting Tunnel with config length: \(configStr.count)")
 
         // 3. Configure Network Settings (Tun2Socks)
         // This sets up the virtual interface
@@ -46,10 +46,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         
         self.setTunnelNetworkSettings(settings) { error in
             if let error = error {
-                NSLog("[Flux] Failed to set settings: \(error)")
+                NSLog("[Capybara] Failed to set settings: \(error)")
                 completionHandler(error)
             } else {
-                NSLog("[Flux] Tunnel settings applied successfully")
+                NSLog("[Capybara] Tunnel settings applied successfully")
                 completionHandler(nil)
             }
         }
@@ -60,7 +60,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         /*
          LibXray.shared.stop()
          */
-        NSLog("[Flux] Stopping Tunnel")
+        NSLog("[Capybara] Stopping Tunnel")
         completionHandler()
     }
     

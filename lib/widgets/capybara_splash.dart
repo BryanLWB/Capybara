@@ -4,16 +4,16 @@ import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 
 /// 流体光晕启动动画 - 与原生 SplashActivity 效果一致
-class FluxSplash extends StatefulWidget {
+class CapybaraSplash extends StatefulWidget {
   final VoidCallback? onReady;
   
-  const FluxSplash({super.key, this.onReady});
+  const CapybaraSplash({super.key, this.onReady});
 
   @override
-  State<FluxSplash> createState() => _FluxSplashState();
+  State<CapybaraSplash> createState() => _CapybaraSplashState();
 }
 
-class _FluxSplashState extends State<FluxSplash> with TickerProviderStateMixin {
+class _CapybaraSplashState extends State<CapybaraSplash> with TickerProviderStateMixin {
   late final AnimationController _fluidController;
   late final AnimationController _logoController;
   late final AnimationController _shimmerController;
@@ -147,7 +147,7 @@ class _FluxSplashState extends State<FluxSplash> with TickerProviderStateMixin {
                         children: [
                           // 基础文字
                           const Text(
-                            'Flux',
+                            'Capybara',
                             style: TextStyle(
                               fontFamily: 'Roboto',
                               fontSize: 52,
@@ -180,7 +180,7 @@ class _FluxSplashState extends State<FluxSplash> with TickerProviderStateMixin {
                                 child: Opacity(
                                   opacity: 0.7 * math.sin(_shimmerController.value * math.pi),
                                   child: const Text(
-                                    'Flux',
+                                    'Capybara',
                                     style: TextStyle(
                                       fontFamily: 'Roboto',
                                       fontSize: 52,

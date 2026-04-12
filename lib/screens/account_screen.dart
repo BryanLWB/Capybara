@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/user_info.dart';
 import '../services/user_data_service.dart';
-import '../services/v2board_api.dart'; // For V2BoardApiException
+import '../services/panel_api.dart'; // For PanelApiException
 import '../services/api_config.dart';
 import '../services/alert_service.dart';
 import '../theme/app_colors.dart';
@@ -11,7 +11,7 @@ import '../utils/formatters.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/staggered_list.dart';
 import '../widgets/section_header.dart';
-import '../widgets/flux_loader.dart';
+import '../widgets/capybara_loader.dart';
 import 'privacy_screen.dart';
 import 'tos_screen.dart';
 import '../services/crisp_service.dart';
@@ -57,9 +57,9 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<Map<String, dynamic>> _loadAccount({bool forceRefresh = false}) async {
-    // 确保 token 已加载
+    // 确保 session 已加载
     final config = ApiConfig();
-    await config.refreshAuthCache();
+    await config.refreshSessionCache();
 
     // 使用缓存服务获取数据 (智能缓存)
     return await _userDataService.getAccountPageData(
@@ -97,7 +97,7 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget build(BuildContext context) {
     // 重试时优先显示 loading，不管 FutureBuilder 状态如何
     if (_isRetrying) {
-      return const Scaffold(body: Center(child: FluxLoader()));
+      return const Scaffold(body: Center(child: CapybaraLoader()));
     }
 
     return FutureBuilder<Map<String, dynamic>>(
@@ -105,9 +105,9 @@ class _AccountScreenState extends State<AccountScreen> {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           final err = snapshot.error;
-          final statusCode = err is V2BoardApiException ? err.statusCode : null;
+          final statusCode = err is PanelApiException ? err.statusCode : null;
           final isAuthExpired = statusCode == 401 || statusCode == 403;
-          String message = err is V2BoardApiException
+          String message = err is PanelApiException
               ? err.message
               : AppLocalizations.of(context)?.networkError ?? 'Network error';
 
@@ -183,7 +183,7 @@ class _AccountScreenState extends State<AccountScreen> {
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: FluxLoader(showTips: true));
+          return const Center(child: CapybaraLoader(showTips: true));
         }
         final user = snapshot.data!['user'] as UserInfo;
 
@@ -471,7 +471,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   _buildLinkRow(
                     context,
                     Icons.info_outline,
-                    AppLocalizations.of(context)?.about ?? 'About Flux',
+                    AppLocalizations.of(context)?.about ?? 'About Capybara',
                     () => _showAboutDialog(context),
                   ),
                 ],
@@ -503,7 +503,7 @@ class _AccountScreenState extends State<AccountScreen> {
             const SizedBox(height: 16),
             const Center(
               child: Text(
-                'Flux v1.0.0',
+                'Capybara v1.0.0',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ),
@@ -589,7 +589,7 @@ class _AccountScreenState extends State<AccountScreen> {
           children: const [
             Icon(Icons.blur_on, color: AppColors.accent, size: 28),
             SizedBox(width: 12),
-            Text('Flux', style: TextStyle(color: Colors.white)),
+            Text('Capybara', style: TextStyle(color: Colors.white)),
           ],
         ),
         content: Column(
@@ -598,7 +598,7 @@ class _AccountScreenState extends State<AccountScreen> {
           children: [
             Text(
               AppLocalizations.of(context)?.appDescription ??
-                  'Flux 是一款安全、快速的网络加速服务。',
+                  'Capybara 是一款安全、快速的网络加速服务。',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,

@@ -29,11 +29,11 @@ class VPNManager: NSObject {
                 self.manager = managers.first
             } else {
                 self.manager = NETunnelProviderManager()
-                self.manager?.localizedDescription = "Flux VPN"
+                self.manager?.localizedDescription = "Capybara VPN"
                 
                 let proto = NETunnelProviderProtocol()
                 proto.providerBundleIdentifier = self.extensionBundleId
-                proto.serverAddress = "Flux"
+                proto.serverAddress = "Capybara"
                 self.manager?.protocolConfiguration = proto
                 
                 self.manager?.saveToPreferences(completionHandler: { (error) in
@@ -64,7 +64,7 @@ class VPNManager: NSObject {
             
             let proto = NETunnelProviderProtocol()
             proto.providerBundleIdentifier = self.extensionBundleId
-            proto.serverAddress = "Flux"
+            proto.serverAddress = "Capybara"
             // Pass V2Ray config to extension
             proto.providerConfiguration = ["config": config]
             

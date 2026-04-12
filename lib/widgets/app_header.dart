@@ -18,7 +18,7 @@ class AppHeader extends StatelessWidget {
               ],
             ).createShader(bounds),
             child: const Text(
-              'Flux',
+              'Capybara',
               style: TextStyle(
                 fontSize: 42,
                 fontWeight: FontWeight.w700,
@@ -55,4 +55,3 @@ class AppHeader extends StatelessWidget {
     );
   }
 }
-
