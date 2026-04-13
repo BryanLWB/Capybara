@@ -138,7 +138,8 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
-  Future<String> fetchSubscriptionContent(UpstreamAuth auth, {String? flag}) async {
+  Future<String> fetchSubscriptionContent(UpstreamAuth auth,
+      {String? flag}) async {
     final summary = await fetchSubscriptionSummary(auth);
     final data = summary['data'];
     if (data is! Map || data['subscribe_url'] == null) {
@@ -155,9 +156,8 @@ class UpstreamPanelApi implements UpstreamApi {
       query['flag'] = flag;
       target = target.replace(queryParameters: query);
     }
-    final response = await _client
-        .get(target, headers: _neutralHeaders())
-        .timeout(_timeout);
+    final response =
+        await _client.get(target, headers: _neutralHeaders()).timeout(_timeout);
     if (response.statusCode >= 400) {
       throw UpstreamException(
         statusCode: response.statusCode,
@@ -179,7 +179,8 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchPaymentMethods(UpstreamAuth auth) async {
+  Future<List<Map<String, dynamic>>> fetchPaymentMethods(
+      UpstreamAuth auth) async {
     final response = await _get(
       '/api/v1/user/order/getPaymentMethod',
       auth: auth,
@@ -271,7 +272,8 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchInviteRecords(UpstreamAuth auth) async {
+  Future<List<Map<String, dynamic>>> fetchInviteRecords(
+      UpstreamAuth auth) async {
     final response = await _get('/api/v1/user/invite/details', auth: auth);
     final data = response['data'];
     if (data is List) {
@@ -351,9 +353,7 @@ class UpstreamPanelApi implements UpstreamApi {
     }
 
     final response = method == 'GET'
-        ? await _client
-            .get(target, headers: headers)
-            .timeout(_timeout)
+        ? await _client.get(target, headers: headers).timeout(_timeout)
         : await _client
             .post(target, headers: headers, body: jsonEncode(body))
             .timeout(_timeout);

@@ -29,7 +29,8 @@ void main() {
     );
   });
 
-  test('login returns opaque session token without upstream auth fields', () async {
+  test('login returns opaque session token without upstream auth fields',
+      () async {
     final response = await handler(
       Request(
         'POST',
@@ -42,7 +43,8 @@ void main() {
     );
 
     expect(response.statusCode, 200);
-    final payload = jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
     final data = payload['data'] as Map<String, dynamic>;
     final session = data['session'] as Map<String, dynamic>;
 
@@ -67,7 +69,8 @@ void main() {
     );
 
     expect(response.statusCode, 200);
-    final payload = jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
     final encoded = jsonEncode(payload).toLowerCase();
     expect(encoded, isNot(contains('subscribe_url')));
     expect(encoded, contains('download_endpoint'));
@@ -82,7 +85,8 @@ void main() {
     );
 
     expect(response.statusCode, 200);
-    final payload = jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
     final data = payload['data'] as Map<String, dynamic>;
     final items = data['items'] as List<dynamic>;
     expect(items, isNotEmpty);
@@ -91,10 +95,12 @@ void main() {
 
 class _FakeUpstreamApi implements UpstreamApi {
   @override
-  Future<void> cancelOrder(UpstreamAuth auth, {required String tradeNo}) async {}
+  Future<void> cancelOrder(UpstreamAuth auth,
+      {required String tradeNo}) async {}
 
   @override
-  Future<int> checkOrder(UpstreamAuth auth, {required String tradeNo}) async => 1;
+  Future<int> checkOrder(UpstreamAuth auth, {required String tradeNo}) async =>
+      1;
 
   @override
   Future<Map<String, dynamic>> checkoutOrder(
@@ -116,15 +122,20 @@ class _FakeUpstreamApi implements UpstreamApi {
 
   @override
   Future<Map<String, dynamic>> fetchClientConfig(UpstreamAuth auth) async =>
-      <String, dynamic>{'data': <String, dynamic>{'theme': 'neutral'}};
+      <String, dynamic>{
+        'data': <String, dynamic>{'theme': 'neutral'}
+      };
 
   @override
   Future<Map<String, dynamic>> fetchClientVersion(UpstreamAuth auth) async =>
-      <String, dynamic>{'data': <String, dynamic>{'windows_version': '1.0.0'}};
+      <String, dynamic>{
+        'data': <String, dynamic>{'windows_version': '1.0.0'}
+      };
 
   @override
-  Future<Map<String, dynamic>> fetchGuestConfig() async =>
-      <String, dynamic>{'data': <String, dynamic>{'is_email_verify': 1}};
+  Future<Map<String, dynamic>> fetchGuestConfig() async => <String, dynamic>{
+        'data': <String, dynamic>{'is_email_verify': 1}
+      };
 
   @override
   Future<List<Map<String, dynamic>>> fetchGuestPlans() async =>
@@ -147,7 +158,8 @@ class _FakeUpstreamApi implements UpstreamApi {
       };
 
   @override
-  Future<List<Map<String, dynamic>>> fetchInviteRecords(UpstreamAuth auth) async =>
+  Future<List<Map<String, dynamic>>> fetchInviteRecords(
+          UpstreamAuth auth) async =>
       <Map<String, dynamic>>[];
 
   @override
@@ -159,7 +171,8 @@ class _FakeUpstreamApi implements UpstreamApi {
       <Map<String, dynamic>>[];
 
   @override
-  Future<List<Map<String, dynamic>>> fetchPaymentMethods(UpstreamAuth auth) async =>
+  Future<List<Map<String, dynamic>>> fetchPaymentMethods(
+          UpstreamAuth auth) async =>
       <Map<String, dynamic>>[];
 
   @override
@@ -174,7 +187,8 @@ class _FakeUpstreamApi implements UpstreamApi {
       ];
 
   @override
-  Future<Map<String, dynamic>> fetchSubscriptionSummary(UpstreamAuth auth) async =>
+  Future<Map<String, dynamic>> fetchSubscriptionSummary(
+          UpstreamAuth auth) async =>
       <String, dynamic>{
         'data': <String, dynamic>{
           'u': 10,
@@ -187,12 +201,15 @@ class _FakeUpstreamApi implements UpstreamApi {
       };
 
   @override
-  Future<String> fetchSubscriptionContent(UpstreamAuth auth, {String? flag}) async =>
+  Future<String> fetchSubscriptionContent(UpstreamAuth auth,
+          {String? flag}) async =>
       'vmess://test';
 
   @override
   Future<Map<String, dynamic>> fetchUserConfig(UpstreamAuth auth) async =>
-      <String, dynamic>{'data': <String, dynamic>{'currency_symbol': '¥'}};
+      <String, dynamic>{
+        'data': <String, dynamic>{'currency_symbol': '¥'}
+      };
 
   @override
   Future<Map<String, dynamic>> fetchUserProfile(UpstreamAuth auth) async =>

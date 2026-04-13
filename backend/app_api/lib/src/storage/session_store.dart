@@ -51,11 +51,9 @@ class SessionRecord {
       id: json['id'] as String? ?? '',
       upstreamToken: json['upstream_token'] as String? ?? '',
       upstreamAuth: json['upstream_auth'] as String? ?? '',
-      createdAt:
-          DateTime.tryParse(json['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      expiresAt:
-          DateTime.tryParse(json['expires_at'] as String? ?? '') ??
+      expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );
   }

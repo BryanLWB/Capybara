@@ -36,8 +36,8 @@ Middleware _jsonResponse() {
       return response.change(
         headers: <String, String>{
           ...response.headers,
-          'content-type':
-              response.headers['content-type'] ?? 'application/json; charset=utf-8',
+          'content-type': response.headers['content-type'] ??
+              'application/json; charset=utf-8',
         },
       );
     };
@@ -65,9 +65,11 @@ class _AppApiService {
   Router get router => _router;
 
   void _mountRoutes() {
-    _router.get('/', (Request request) => _ok(<String, dynamic>{
-          'service': 'ok',
-        }));
+    _router.get(
+        '/',
+        (Request request) => _ok(<String, dynamic>{
+              'service': 'ok',
+            }));
 
     _router.post('/api/app/v1/session/login', _login);
     _router.post('/api/app/v1/session/register', _register);
@@ -80,13 +82,15 @@ class _AppApiService {
     _router.get('/api/app/v1/account/profile', _profile);
     _router.get('/api/app/v1/account/preferences', _userConfig);
     _router.get('/api/app/v1/account/subscription', _subscriptionSummary);
-    _router.get('/api/app/v1/account/subscription/content', _subscriptionContent);
+    _router.get(
+        '/api/app/v1/account/subscription/content', _subscriptionContent);
     _router.get('/api/app/v1/content/notices', _notices);
 
     _router.get('/api/app/v1/commerce/payment-methods', _paymentMethods);
     _router.get('/api/app/v1/commerce/orders', _orders);
     _router.post('/api/app/v1/commerce/orders', _createOrder);
-    _router.post('/api/app/v1/commerce/orders/<orderId>/checkout', _checkoutOrder);
+    _router.post(
+        '/api/app/v1/commerce/orders/<orderId>/checkout', _checkoutOrder);
     _router.get('/api/app/v1/commerce/orders/<orderId>/status', _orderStatus);
     _router.post('/api/app/v1/commerce/orders/<orderId>/cancel', _cancelOrder);
 
@@ -183,7 +187,8 @@ class _AppApiService {
   Future<Response> _logout(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     await sessionStore.delete(session.id);
     return _ok(<String, dynamic>{'cleared': true});
@@ -213,7 +218,8 @@ class _AppApiService {
   Future<Response> _profile(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final profile = await upstreamApi.fetchUserProfile(_toAuth(session));
@@ -226,7 +232,8 @@ class _AppApiService {
   Future<Response> _userConfig(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final configData = await upstreamApi.fetchUserConfig(_toAuth(session));
@@ -239,10 +246,12 @@ class _AppApiService {
   Future<Response> _subscriptionSummary(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final summary = await upstreamApi.fetchSubscriptionSummary(_toAuth(session));
+      final summary =
+          await upstreamApi.fetchSubscriptionSummary(_toAuth(session));
       return _ok(<String, dynamic>{
         'subscription': _mapSubscription(summary['data'] as Map? ?? const {}),
       });
@@ -252,7 +261,8 @@ class _AppApiService {
   Future<Response> _subscriptionContent(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     try {
       final content = await upstreamApi.fetchSubscriptionContent(
@@ -275,7 +285,8 @@ class _AppApiService {
   Future<Response> _notices(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final notices = await upstreamApi.fetchNotices(_toAuth(session));
@@ -288,7 +299,8 @@ class _AppApiService {
   Future<Response> _paymentMethods(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final methods = await upstreamApi.fetchPaymentMethods(_toAuth(session));
@@ -301,7 +313,8 @@ class _AppApiService {
   Future<Response> _orders(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final orders = await upstreamApi.fetchOrders(_toAuth(session));
@@ -314,7 +327,8 @@ class _AppApiService {
   Future<Response> _createOrder(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     final body = await _jsonBody(request);
     return _withUpstreamGuard(() async {
@@ -333,7 +347,8 @@ class _AppApiService {
   Future<Response> _checkoutOrder(Request request, String orderId) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     final body = await _jsonBody(request);
     return _withUpstreamGuard(() async {
@@ -351,10 +366,12 @@ class _AppApiService {
   Future<Response> _orderStatus(Request request, String orderId) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final status = await upstreamApi.checkOrder(_toAuth(session), tradeNo: orderId);
+      final status =
+          await upstreamApi.checkOrder(_toAuth(session), tradeNo: orderId);
       return _ok(<String, dynamic>{'state_code': status});
     });
   }
@@ -362,7 +379,8 @@ class _AppApiService {
   Future<Response> _cancelOrder(Request request, String orderId) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       await upstreamApi.cancelOrder(_toAuth(session), tradeNo: orderId);
@@ -373,7 +391,8 @@ class _AppApiService {
   Future<Response> _inviteOverview(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final overview = await upstreamApi.fetchInviteOverview(_toAuth(session));
@@ -388,7 +407,8 @@ class _AppApiService {
   Future<Response> _inviteRecords(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final records = await upstreamApi.fetchInviteRecords(_toAuth(session));
@@ -401,7 +421,8 @@ class _AppApiService {
   Future<Response> _generateInviteCode(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       await upstreamApi.generateInviteCode(_toAuth(session));
@@ -412,7 +433,8 @@ class _AppApiService {
   Future<Response> _redeemGift(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     final body = await _jsonBody(request);
     return _withUpstreamGuard(() async {
@@ -429,7 +451,8 @@ class _AppApiService {
   Future<Response> _clientConfig(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
       final configData = await upstreamApi.fetchClientConfig(_toAuth(session));
@@ -442,17 +465,20 @@ class _AppApiService {
   Future<Response> _clientVersion(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
-      return _error('auth.required', 'Authentication required', HttpStatus.unauthorized);
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final versionData = await upstreamApi.fetchClientVersion(_toAuth(session));
+      final versionData =
+          await upstreamApi.fetchClientVersion(_toAuth(session));
       return _ok(<String, dynamic>{
         'version': versionData['data'] ?? const <String, dynamic>{},
       });
     });
   }
 
-  Future<Response> _withUpstreamGuard(Future<Response> Function() action) async {
+  Future<Response> _withUpstreamGuard(
+      Future<Response> Function() action) async {
     try {
       return await action();
     } on UpstreamException catch (error) {
@@ -543,10 +569,8 @@ class _AppApiService {
       'plan_id': raw['id'] ?? 0,
       'title': raw['name'] ?? 'Plan',
       'summary': raw['content'],
-      'transfer_bytes': _toNum(raw['transfer_enable']).toInt() *
-          1024 *
-          1024 *
-          1024,
+      'transfer_bytes':
+          _toNum(raw['transfer_enable']).toInt() * 1024 * 1024 * 1024,
       'monthly_amount': raw['month_price'],
       'quarterly_amount': raw['quarter_price'],
       'half_year_amount': raw['half_year_price'],
@@ -704,8 +728,7 @@ class _AppApiService {
 
   Future<void> _jitter() async {
     final spread = config.requestJitterSpread.inMilliseconds;
-    final delay =
-        config.requestJitterBase.inMilliseconds +
+    final delay = config.requestJitterBase.inMilliseconds +
         (spread <= 0 ? 0 : _random.nextInt(spread));
     await Future<void>.delayed(Duration(milliseconds: delay));
   }

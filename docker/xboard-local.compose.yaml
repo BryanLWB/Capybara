@@ -1,0 +1,55 @@
+services:
+  web:
+    image: ghcr.io/cedar2025/xboard:new
+    working_dir: /www
+    volumes:
+      - ../upstreams/xboard:/www
+      - xboard-redis-data:/data
+    environment:
+      - docker=true
+    depends_on:
+      - redis
+    ports:
+      - "7001:7001"
+    command: php artisan octane:start --port=7001 --host=0.0.0.0
+    restart: unless-stopped
+
+  horizon:
+    image: ghcr.io/cedar2025/xboard:new
+    working_dir: /www
+    volumes:
+      - ../upstreams/xboard:/www
+      - xboard-redis-data:/data
+    environment:
+      - docker=true
+    depends_on:
+      - redis
+    command: php artisan horizon
+    restart: unless-stopped
+
+  ws-server:
+    image: ghcr.io/cedar2025/xboard:new
+    working_dir: /www
+    volumes:
+      - ../upstreams/xboard:/www
+      - xboard-redis-data:/data
+    environment:
+      - docker=true
+    depends_on:
+      - redis
+    ports:
+      - "8076:8076"
+    command: php artisan ws-server start --host=0.0.0.0 --port=8076
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --unixsocket /data/redis.sock --unixsocketperm 777
+    restart: unless-stopped
+    volumes:
+      - xboard-redis-data:/data
+    sysctls:
+      net.core.somaxconn: 1024
+
+volumes:
+  xboard-redis-data:
