@@ -121,6 +121,23 @@ class AppApi {
     return _get('/content/notices');
   }
 
+  Future<Map<String, dynamic>> getHelpArticles({required String language}) {
+    return _get(
+      '/content/help/articles',
+      query: <String, String>{'language': language},
+    );
+  }
+
+  Future<Map<String, dynamic>> getHelpArticle(
+    int articleId, {
+    required String language,
+  }) {
+    return _get(
+      '/content/help/articles/$articleId',
+      query: <String, String>{'language': language},
+    );
+  }
+
   Future<Map<String, dynamic>> getPaymentMethods() {
     return _get('/commerce/payment-methods');
   }
@@ -155,7 +172,8 @@ class AppApi {
   }
 
   Future<Map<String, dynamic>> cancelOrder(String tradeNo) {
-    return _post('/commerce/orders/$tradeNo/cancel', body: const <String, dynamic>{});
+    return _post('/commerce/orders/$tradeNo/cancel',
+        body: const <String, dynamic>{});
   }
 
   Future<Map<String, dynamic>> getOrders() {
@@ -249,8 +267,11 @@ class AppApi {
   }) async {
     final headers = <String, String>{
       'Accept': 'application/json, text/plain, */*',
-      'User-Agent': UserAgentUtils.userAgent,
     };
+    final userAgent = UserAgentUtils.userAgent;
+    if (userAgent.isNotEmpty) {
+      headers['User-Agent'] = userAgent;
+    }
     if (isJson) {
       headers['Content-Type'] = 'application/json';
     }
@@ -266,9 +287,8 @@ class AppApi {
 
   Future<Uri> _buildUri(String path, Map<String, String>? query) async {
     final base = await _config.getBaseUrl();
-    final normalized = base.endsWith('/')
-        ? base.substring(0, base.length - 1)
-        : base;
+    final normalized =
+        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
     return Uri.parse('$normalized$path').replace(queryParameters: query);
   }
 

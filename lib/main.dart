@@ -9,6 +9,8 @@ import 'package:window_manager/window_manager.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'screens/auth_screen.dart';
 import 'screens/root_shell.dart';
+import 'screens/web_auth_page.dart';
+import 'screens/web_shell.dart';
 import 'services/api_config.dart';
 import 'services/remote_config_service.dart';
 import 'services/tray_service.dart';
@@ -245,8 +247,18 @@ class _AuthGateState extends State<AuthGate> {
       return const CapybaraSplash();
     }
     if (!_authed) {
+      if (kIsWeb) {
+        return WebAuthPage(
+          onAuthed: () => setState(() => _authed = true),
+        );
+      }
       return AuthScreen(
         onAuthed: () => setState(() => _authed = true),
+      );
+    }
+    if (kIsWeb) {
+      return WebShell(
+        onLogout: () => setState(() => _authed = false),
       );
     }
     return RootShell(

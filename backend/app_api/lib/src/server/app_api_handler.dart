@@ -24,9 +24,42 @@ Handler createAppApiHandler({
     logger: logger ?? Logger('AppApi'),
   );
   return Pipeline()
+      .addMiddleware(_cors())
       .addMiddleware(logRequests())
       .addMiddleware(_jsonResponse())
       .addHandler(service.router.call);
+}
+
+Middleware _cors() {
+  return (innerHandler) {
+    return (request) async {
+      final origin = request.headers['origin'];
+      final corsHeaders = <String, String>{
+        'access-control-allow-origin':
+            origin == null || origin.isEmpty ? '*' : origin,
+        'vary': 'Origin',
+        'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+        'access-control-allow-headers':
+            'Authorization, Content-Type, Accept, Origin',
+        'access-control-max-age': '86400',
+      };
+
+      if (request.method.toUpperCase() == 'OPTIONS') {
+        return Response(
+          HttpStatus.noContent,
+          headers: corsHeaders,
+        );
+      }
+
+      final response = await innerHandler(request);
+      return response.change(
+        headers: <String, String>{
+          ...response.headers,
+          ...corsHeaders,
+        },
+      );
+    };
+  };
 }
 
 Middleware _jsonResponse() {
@@ -85,6 +118,8 @@ class _AppApiService {
     _router.get(
         '/api/app/v1/account/subscription/content', _subscriptionContent);
     _router.get('/api/app/v1/content/notices', _notices);
+    _router.get('/api/app/v1/content/help/articles', _helpArticles);
+    _router.get('/api/app/v1/content/help/articles/<articleId>', _helpArticle);
 
     _router.get('/api/app/v1/commerce/payment-methods', _paymentMethods);
     _router.get('/api/app/v1/commerce/orders', _orders);
@@ -292,6 +327,49 @@ class _AppApiService {
       final notices = await upstreamApi.fetchNotices(_toAuth(session));
       return _ok(<String, dynamic>{
         'items': notices.map(_mapNotice).toList(),
+      });
+    });
+  }
+
+  Future<Response> _helpArticles(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final language =
+        _normalizeHelpLanguage(request.url.queryParameters['language']);
+    return _withUpstreamGuard(() async {
+      final articles = await upstreamApi.fetchHelpArticles(
+        _toAuth(session),
+        language: language,
+      );
+      return _ok(<String, dynamic>{
+        'categories': _mapHelpCategories(articles['data']),
+      });
+    });
+  }
+
+  Future<Response> _helpArticle(Request request, String articleId) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final parsedId = int.tryParse(articleId);
+    if (parsedId == null || parsedId <= 0) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    final language =
+        _normalizeHelpLanguage(request.url.queryParameters['language']);
+    return _withUpstreamGuard(() async {
+      final article = await upstreamApi.fetchHelpArticleDetail(
+        _toAuth(session),
+        articleId: parsedId,
+        language: language,
+      );
+      return _ok(<String, dynamic>{
+        'article': _mapHelpArticleDetail(article['data'] as Map? ?? const {}),
       });
     });
   }
@@ -593,6 +671,47 @@ class _AppApiService {
     };
   }
 
+  List<Map<String, dynamic>> _mapHelpCategories(Object? raw) {
+    if (raw is! Map) return const <Map<String, dynamic>>[];
+
+    final categories = <Map<String, dynamic>>[];
+    for (final entry in raw.entries) {
+      final articleList = entry.value;
+      if (articleList is! List) continue;
+      final articles = articleList
+          .whereType<Map>()
+          .map(
+              (item) => _mapHelpArticleSummary(Map<String, dynamic>.from(item)))
+          .where((item) => item['article_id'] != 0)
+          .toList();
+      if (articles.isEmpty) continue;
+      categories.add(<String, dynamic>{
+        'name': entry.key.toString(),
+        'articles': articles,
+      });
+    }
+    return categories;
+  }
+
+  Map<String, dynamic> _mapHelpArticleSummary(Map<String, dynamic> raw) {
+    return <String, dynamic>{
+      'article_id': raw['id'] ?? 0,
+      'category': raw['category'] ?? '',
+      'title': raw['title'] ?? '',
+      'updated_at': raw['updated_at'] ?? 0,
+    };
+  }
+
+  Map<String, dynamic> _mapHelpArticleDetail(Map raw) {
+    return <String, dynamic>{
+      'article_id': raw['id'] ?? 0,
+      'category': raw['category'] ?? '',
+      'title': raw['title'] ?? '',
+      'body_html': raw['body'] ?? '',
+      'updated_at': raw['updated_at'] ?? 0,
+    };
+  }
+
   Map<String, dynamic> _mapPaymentMethod(Map<String, dynamic> raw) {
     return <String, dynamic>{
       'method_id': raw['id'] ?? 0,
@@ -724,6 +843,17 @@ class _AppApiService {
       404 => 'Request failed',
       _ => 'Request failed',
     };
+  }
+
+  String _normalizeHelpLanguage(String? raw) {
+    final value = raw?.trim().toLowerCase();
+    if (value == null || value.isEmpty) {
+      return 'zh-CN';
+    }
+    if (value.startsWith('zh')) {
+      return 'zh-CN';
+    }
+    return 'en-US';
   }
 
   Future<void> _jitter() async {

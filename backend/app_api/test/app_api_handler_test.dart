@@ -91,9 +91,147 @@ void main() {
     final items = data['items'] as List<dynamic>;
     expect(items, isNotEmpty);
   });
+
+  test('help knowledge list is grouped by category', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse(
+            'http://localhost/api/app/v1/content/help/articles?language=zh-CN'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    final categories = data['categories'] as List<dynamic>;
+    expect(categories, hasLength(2));
+    expect(
+      categories.first,
+      <String, dynamic>{
+        'name': '客户端下载',
+        'articles': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'article_id': 11,
+            'category': '客户端下载',
+            'title': 'Windows 客户端',
+            'updated_at': 1700000001,
+          },
+        ],
+      },
+    );
+  });
+
+  test('help knowledge detail exposes article html body', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse(
+            'http://localhost/api/app/v1/content/help/articles/11?language=zh-CN'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    expect(
+      data['article'],
+      <String, dynamic>{
+        'article_id': 11,
+        'category': '客户端下载',
+        'title': 'Windows 客户端',
+        'body_html': '<p>正文</p>',
+        'updated_at': 1700000001,
+      },
+    );
+  });
+
+  test('help knowledge list returns empty categories when upstream is empty',
+      () async {
+    upstreamApi.helpArticleCategories = const <String, dynamic>{'data': []};
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse(
+            'http://localhost/api/app/v1/content/help/articles?language=en-US'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    expect(data['categories'], isEmpty);
+  });
+
+  test('help knowledge endpoints require authentication', () async {
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse(
+            'http://localhost/api/app/v1/content/help/articles?language=zh-CN'),
+      ),
+    );
+
+    expect(response.statusCode, 401);
+  });
 }
 
 class _FakeUpstreamApi implements UpstreamApi {
+  Map<String, dynamic> helpArticleCategories = <String, dynamic>{
+    'data': <String, dynamic>{
+      '客户端下载': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 11,
+          'category': '客户端下载',
+          'title': 'Windows 客户端',
+          'updated_at': 1700000001,
+        },
+      ],
+      '订阅教程': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 12,
+          'category': '订阅教程',
+          'title': '如何导入订阅',
+          'updated_at': 1700000002,
+        },
+      ],
+    },
+  };
+
+  Map<String, dynamic> helpArticleDetail = <String, dynamic>{
+    'data': <String, dynamic>{
+      'id': 11,
+      'category': '客户端下载',
+      'title': 'Windows 客户端',
+      'body': '<p>正文</p>',
+      'updated_at': 1700000001,
+    },
+  };
+
   @override
   Future<void> cancelOrder(UpstreamAuth auth,
       {required String tradeNo}) async {}
@@ -131,6 +269,21 @@ class _FakeUpstreamApi implements UpstreamApi {
       <String, dynamic>{
         'data': <String, dynamic>{'windows_version': '1.0.0'}
       };
+
+  @override
+  Future<Map<String, dynamic>> fetchHelpArticleDetail(
+    UpstreamAuth auth, {
+    required int articleId,
+    required String language,
+  }) async =>
+      helpArticleDetail;
+
+  @override
+  Future<Map<String, dynamic>> fetchHelpArticles(
+    UpstreamAuth auth, {
+    required String language,
+  }) async =>
+      helpArticleCategories;
 
   @override
   Future<Map<String, dynamic>> fetchGuestConfig() async => <String, dynamic>{

@@ -99,4 +99,15 @@ abstract class UpstreamApi {
   Future<Map<String, dynamic>> fetchClientConfig(UpstreamAuth auth);
 
   Future<Map<String, dynamic>> fetchClientVersion(UpstreamAuth auth);
+
+  Future<Map<String, dynamic>> fetchHelpArticles(
+    UpstreamAuth auth, {
+    required String language,
+  });
+
+  Future<Map<String, dynamic>> fetchHelpArticleDetail(
+    UpstreamAuth auth, {
+    required int articleId,
+    required String language,
+  });
 }

@@ -227,7 +227,7 @@ class RemoteConfigService {
       _log('Fetching routing rules from: ${rulesConfig.url}');
       final response = await http.get(
         Uri.parse(rulesConfig.url),
-        headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
+        headers: _requestHeaders(),
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         String content = response.body;
@@ -270,7 +270,7 @@ class RemoteConfigService {
     try {
       final response = await http.get(
         Uri.parse(url),
-        headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
+        headers: _requestHeaders(),
       ).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         // 智能解密：支持加密和明文两种格式
@@ -291,7 +291,7 @@ class RemoteConfigService {
       final testUrl = uri.replace(path: '/');
       final response = await http.get(
         testUrl,
-        headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
+        headers: _requestHeaders(),
       ).timeout(const Duration(seconds: 5));
       return response.statusCode < 500;
     } catch (e) {
@@ -358,6 +358,15 @@ class RemoteConfigService {
     if (kDebugMode) {
       print('[RemoteConfigService] $message');
     }
+  }
+
+  Map<String, String> _requestHeaders() {
+    final headers = <String, String>{'Accept': '*/*'};
+    final userAgent = UserAgentUtils.userAgent;
+    if (userAgent.isNotEmpty) {
+      headers['User-Agent'] = userAgent;
+    }
+    return headers;
   }
 }
 

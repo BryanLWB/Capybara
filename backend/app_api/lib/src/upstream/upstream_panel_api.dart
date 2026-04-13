@@ -315,6 +315,34 @@ class UpstreamPanelApi implements UpstreamApi {
     );
   }
 
+  @override
+  Future<Map<String, dynamic>> fetchHelpArticles(
+    UpstreamAuth auth, {
+    required String language,
+  }) {
+    return _get(
+      '/api/v1/user/knowledge/fetch',
+      auth: auth,
+      query: {'language': language},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchHelpArticleDetail(
+    UpstreamAuth auth, {
+    required int articleId,
+    required String language,
+  }) {
+    return _get(
+      '/api/v1/user/knowledge/fetch',
+      auth: auth,
+      query: {
+        'id': '$articleId',
+        'language': language,
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> _get(
     String path, {
     UpstreamAuth? auth,

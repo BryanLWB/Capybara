@@ -11,6 +11,13 @@ class AnimatedCard extends StatefulWidget {
   final bool enableHover;
   final bool enableBreathing; // 是否启用呼吸灯
   final Duration animationDuration;
+  final double borderRadius;
+  final double hoverScale;
+  final List<Color>? gradientColors;
+  final Color? baseBorderColor;
+  final Color? hoverBorderColor;
+  final List<BoxShadow>? baseBoxShadows;
+  final List<BoxShadow>? hoverBoxShadows;
 
   const AnimatedCard({
     super.key,
@@ -22,6 +29,13 @@ class AnimatedCard extends StatefulWidget {
     this.enableHover = true,
     this.enableBreathing = true,
     this.animationDuration = const Duration(milliseconds: 300),
+    this.borderRadius = 22,
+    this.hoverScale = 1.02,
+    this.gradientColors,
+    this.baseBorderColor,
+    this.hoverBorderColor,
+    this.baseBoxShadows,
+    this.hoverBoxShadows,
   });
 
   @override
@@ -44,13 +58,16 @@ class _AnimatedCardState extends State<AnimatedCard>
       vsync: this,
       duration: widget.animationDuration,
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: widget.hoverScale,
+    ).animate(
       CurvedAnimation(
         parent: _hoverController,
         curve: Curves.easeOutCubic,
       ),
     );
-    
+
     // 呼吸灯动画
     _breathingController = AnimationController(
       vsync: this,
@@ -62,7 +79,7 @@ class _AnimatedCardState extends State<AnimatedCard>
         curve: Curves.easeInOut,
       ),
     );
-    
+
     if (widget.enableBreathing) {
       _breathingController.repeat(reverse: true);
     }
@@ -75,84 +92,117 @@ class _AnimatedCardState extends State<AnimatedCard>
     super.dispose();
   }
 
+  void _setHovered(bool hovered) {
+    if (!widget.enableHover || widget.onTap == null || _isHovered == hovered) {
+      return;
+    }
+
+    setState(() => _isHovered = hovered);
+    if (hovered) {
+      _hoverController.forward();
+    } else {
+      _hoverController.reverse();
+    }
+  }
+
   void _handleTapDown(TapDownDetails details) {
     if (widget.enableHover) {
-      setState(() => _isHovered = true);
-      _hoverController.forward();
+      _setHovered(true);
     }
   }
 
   void _handleTapUp(TapUpDetails details) {
     if (widget.enableHover) {
-      setState(() => _isHovered = false);
-      _hoverController.reverse();
+      _setHovered(false);
     }
     widget.onTap?.call();
   }
 
   void _handleTapCancel() {
     if (widget.enableHover) {
-      setState(() => _isHovered = false);
-      _hoverController.reverse();
+      _setHovered(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: widget.onTap != null ? _handleTapDown : null,
-      onTapUp: widget.onTap != null ? _handleTapUp : null,
-      onTapCancel: widget.onTap != null ? _handleTapCancel : null,
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_hoverController, _breathingController]),
-        builder: (context, child) {
-          // 呼吸灯强度 (0.0 - 1.0)
-          final breathValue = _breathingAnimation.value;
-          final glowOpacity = 0.08 + (breathValue * 0.12); // 0.08 - 0.20
-          final borderOpacity = 0.15 + (breathValue * 0.25); // 0.15 - 0.40
-          
-          return Transform.scale(
-            scale: _scaleAnimation.value,
-            child: Container(
-              width: widget.width,
-              height: widget.height,
-              padding: widget.padding,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
+    return MouseRegion(
+      cursor:
+          widget.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: widget.onTap != null ? (_) => _setHovered(true) : null,
+      onExit: widget.onTap != null ? (_) => _setHovered(false) : null,
+      child: GestureDetector(
+        onTapDown: widget.onTap != null ? _handleTapDown : null,
+        onTapUp: widget.onTap != null ? _handleTapUp : null,
+        onTapCancel: widget.onTap != null ? _handleTapCancel : null,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([_hoverController, _breathingController]),
+          builder: (context, child) {
+            final breathValue = _breathingAnimation.value;
+            final glowOpacity = 0.08 + (breathValue * 0.12);
+            final borderOpacity = 0.15 + (breathValue * 0.25);
+            final gradientColors =
+                widget.gradientColors ??
+                [
+                  AppColors.surface,
+                  Color.lerp(
                     AppColors.surface,
-                    Color.lerp(AppColors.surface, AppColors.surfaceAlt, breathValue * 0.5)!,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: _isHovered
-                      ? AppColors.accent.withOpacity(0.6)
-                      : AppColors.accent.withOpacity(borderOpacity),
-                  width: _isHovered ? 1.5 : 1,
-                ),
-                boxShadow: [
-                  // 呼吸光晕
-                  BoxShadow(
-                    color: AppColors.accent.withOpacity(glowOpacity),
-                    blurRadius: 20 + (breathValue * 10),
-                    spreadRadius: -2,
+                    AppColors.surfaceAlt,
+                    breathValue * 0.5,
+                  )!,
+                ];
+            final borderColor = _isHovered
+                ? (widget.hoverBorderColor ??
+                    AppColors.accent.withOpacity(0.6))
+                : (widget.baseBorderColor ??
+                    AppColors.accent.withOpacity(borderOpacity));
+            final boxShadows = _isHovered
+                ? (widget.hoverBoxShadows ??
+                    [
+                      BoxShadow(
+                        color: AppColors.accent.withOpacity(glowOpacity),
+                        blurRadius: 20 + (breathValue * 10),
+                        spreadRadius: -2,
+                      ),
+                      BoxShadow(
+                        color: AppColors.accent.withOpacity(0.25),
+                        blurRadius: 30,
+                        offset: const Offset(0, 8),
+                      ),
+                    ])
+                : (widget.baseBoxShadows ??
+                    [
+                      BoxShadow(
+                        color: AppColors.accent.withOpacity(glowOpacity),
+                        blurRadius: 20 + (breathValue * 10),
+                        spreadRadius: -2,
+                      ),
+                    ]);
+
+            return Transform.scale(
+              scale: _scaleAnimation.value,
+              child: Container(
+                width: widget.width,
+                height: widget.height,
+                padding: widget.padding,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: gradientColors,
                   ),
-                  // 悬停时额外光晕
-                  if (_isHovered)
-                    BoxShadow(
-                      color: AppColors.accent.withOpacity(0.25),
-                      blurRadius: 30,
-                      offset: const Offset(0, 8),
-                    ),
-                ],
+                  borderRadius: BorderRadius.circular(widget.borderRadius),
+                  border: Border.all(
+                    color: borderColor,
+                    width: _isHovered ? 1.5 : 1,
+                  ),
+                  boxShadow: boxShadows,
+                ),
+                child: widget.child,
               ),
-              child: widget.child,
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
