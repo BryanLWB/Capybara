@@ -146,6 +146,24 @@ Capybara 提供了一整套定制化方案，请按以下步骤完成配置。
 2.  确保发布环境提供 `UPSTREAM_BASE_URL`、`APP_SESSION_TTL_SECONDS`、`REDIS_URL` 等运行参数。
 3.  前端域名入口统一指向你的 App API，而不是直接指向面板域名。
 
+### 本地联调补充
+
+如果你使用仓库里的本地 Xboard Docker 编排，并且把 `upstreams/xboard` 挂载进容器，记得先同步一次 Xboard 自带的管理后台静态资源：
+
+```bash
+bash scripts/sync_xboard_admin_assets.sh
+```
+
+原因是官方镜像自带了编译好的 admin 前端资源，但本地 bind mount 会把它们盖掉；不补这一步时，`/ad1f98d6` 管理后台会白屏。
+
+如果你想在普通浏览器里直接打开本地 web 端，优先使用下面这个稳定入口，而不是 `flutter run -d web-server`：
+
+```bash
+bash scripts/serve_web_local.sh
+```
+
+默认会把 web 构建产物服务在 `http://127.0.0.1:3006`，并指向本地 `app_api`：`http://127.0.0.1:8787`。
+
 ### 第三步：OSS 远程配置 (强烈推荐)
 
 通过 OSS 动态下发配置，实现**域名防封**与**功能开关**。

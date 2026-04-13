@@ -146,6 +146,24 @@ The current version uses the in-repo app API layer to hide upstream panel detail
 2.  Provide runtime values such as `UPSTREAM_BASE_URL`, `APP_SESSION_TTL_SECONDS`, and `REDIS_URL`.
 3.  Point the frontend domain entry to your app API instead of exposing the upstream panel directly.
 
+### Local Split-Dev Notes
+
+If you use the in-repo local Xboard Docker stack with `upstreams/xboard` bind-mounted into the container, sync the bundled admin frontend assets once before opening the admin UI:
+
+```bash
+bash scripts/sync_xboard_admin_assets.sh
+```
+
+The official image already contains the compiled admin assets, but the local bind mount hides them. Without syncing them into the local clone first, the `/ad1f98d6` admin page will render as a blank screen.
+
+If you want to open the local web console directly in a normal browser, prefer this stable entry point instead of `flutter run -d web-server`:
+
+```bash
+bash scripts/serve_web_local.sh
+```
+
+By default it serves the built web app on `http://127.0.0.1:3006` and points it at the local `app_api` on `http://127.0.0.1:8787`.
+
 ### Step 3: OSS Remote Config (Recommended)
 
 Dynamic config via OSS for **Domain Switching** and **Feature Toggles**.
