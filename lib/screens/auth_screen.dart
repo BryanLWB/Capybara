@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../services/api_config.dart';
 import '../services/panel_api.dart';
@@ -288,12 +290,12 @@ class _AuthScreenState extends State<AuthScreen>
                           // Logo / Header
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            width: isKeyboardOpen ? 32 : 48,
-                            height: isKeyboardOpen ? 32 : 48,
-                            child: Icon(
-                              Icons.blur_on,
-                              size: isKeyboardOpen ? 32 : 48,
-                              color: AppColors.accent,
+                            width: isKeyboardOpen ? 48 : 72,
+                            height: isKeyboardOpen ? 48 : 72,
+                            child: SvgPicture.asset(
+                              'assets/images/capybara_logo_no_border.svg',
+                              fit: BoxFit.contain,
+                              semanticsLabel: 'Kapi Logo',
                             ),
                           ),
                           AnimatedSize(
@@ -303,14 +305,13 @@ class _AuthScreenState extends State<AuthScreen>
                           ),
                           AnimatedDefaultTextStyle(
                             duration: const Duration(milliseconds: 200),
-                            style: TextStyle(
-                              fontFamily: 'Roboto',
+                            style: GoogleFonts.nunito(
                               fontSize: isKeyboardOpen ? 24 : 32,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                               color: AppColors.textPrimary,
-                              letterSpacing: 2,
+                              letterSpacing: 1.5,
                             ),
-                            child: const Text('Capybara'),
+                            child: const Text('Kapi'),
                           ),
                           AnimatedSize(
                             duration: const Duration(milliseconds: 200),

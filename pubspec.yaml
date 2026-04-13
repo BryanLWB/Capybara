@@ -40,6 +40,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.0
   google_fonts: ^6.2.1
+  flutter_svg: ^2.0.10+1
   path_provider: ^2.1.1
   shared_preferences: ^2.2.2
   yaml: ^3.1.2
@@ -84,6 +85,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icons/
+    - assets/images/
     # 通用数据文件 (用于 Android 和桌面端的路由规则)
     - assets/bin/geoip.dat
     - assets/bin/geosite.dat
