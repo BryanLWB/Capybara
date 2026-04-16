@@ -293,7 +293,7 @@ class _AuthScreenState extends State<AuthScreen>
                             width: isKeyboardOpen ? 48 : 72,
                             height: isKeyboardOpen ? 48 : 72,
                             child: SvgPicture.asset(
-                              'assets/images/capybara_logo_no_border.svg',
+                              'assets/images/capybara_box_logo.svg',
                               fit: BoxFit.contain,
                               semanticsLabel: 'Kapi Logo',
                             ),

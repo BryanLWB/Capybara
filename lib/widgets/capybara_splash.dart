@@ -147,7 +147,7 @@ class _CapybaraSplashState extends State<CapybaraSplash> with TickerProviderStat
                         children: [
                           // 基础文字
                           const Text(
-                            'Capybara',
+                            'Kapi',
                             style: TextStyle(
                               fontFamily: 'Roboto',
                               fontSize: 52,
@@ -180,7 +180,7 @@ class _CapybaraSplashState extends State<CapybaraSplash> with TickerProviderStat
                                 child: Opacity(
                                   opacity: 0.7 * math.sin(_shimmerController.value * math.pi),
                                   child: const Text(
-                                    'Capybara',
+                                    'Kapi',
                                     style: TextStyle(
                                       fontFamily: 'Roboto',
                                       fontSize: 52,
