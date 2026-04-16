@@ -15,5 +15,6 @@ cleanup() {
 trap cleanup EXIT
 
 docker cp "${container_id}:/www/public/assets/admin/." "${TARGET_DIR}/"
+rm -rf "${TARGET_DIR}/.git"
 
 echo "Synced Xboard admin assets into ${TARGET_DIR}"

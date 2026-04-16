@@ -43,14 +43,18 @@ class AppApi {
     String? emailCode,
     String? recaptchaData,
   }) {
+    final trimmedInviteCode = _trimmedOrNull(inviteCode);
+    final trimmedEmailCode = _trimmedOrNull(emailCode);
+    final trimmedRecaptchaData = _trimmedOrNull(recaptchaData);
     return _post(
       '/session/register',
       body: <String, dynamic>{
         'email': email,
         'password': password,
-        if (inviteCode?.isNotEmpty == true) 'invite_code': inviteCode,
-        if (emailCode?.isNotEmpty == true) 'email_code': emailCode,
-        if (recaptchaData?.isNotEmpty == true) 'captcha_payload': recaptchaData,
+        if (trimmedInviteCode != null) 'invite_code': trimmedInviteCode,
+        if (trimmedEmailCode != null) 'email_code': trimmedEmailCode,
+        if (trimmedRecaptchaData != null)
+          'captcha_payload': trimmedRecaptchaData,
       },
       withSession: false,
     );
@@ -94,6 +98,32 @@ class AppApi {
     return _get('/account/preferences');
   }
 
+  Future<Map<String, dynamic>> updateNotifications({
+    required bool expiry,
+    required bool traffic,
+  }) {
+    return _patch(
+      '/account/notifications',
+      body: <String, dynamic>{
+        'expiry': expiry,
+        'traffic': traffic,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) {
+    return _post(
+      '/account/password/change',
+      body: <String, dynamic>{
+        'old_password': oldPassword,
+        'new_password': newPassword,
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> getPlans() {
     return _get('/catalog/plans');
   }
@@ -115,6 +145,22 @@ class AppApi {
       throw _errorFromResponse(response);
     }
     return response.body;
+  }
+
+  Future<Map<String, dynamic>> createSubscriptionAccessLink({String? flag}) {
+    return _post(
+      '/account/subscription/access-link',
+      body: <String, dynamic>{
+        if (flag?.trim().isNotEmpty == true) 'flag': flag!.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> resetSubscriptionSecurity() {
+    return _post(
+      '/account/subscription/reset',
+      body: const <String, dynamic>{},
+    );
   }
 
   Future<Map<String, dynamic>> getNotices() {
@@ -142,6 +188,21 @@ class AppApi {
     return _get('/commerce/payment-methods');
   }
 
+  Future<Map<String, dynamic>> validateCoupon(
+    int planId,
+    String periodKey,
+    String couponCode,
+  ) {
+    return _post(
+      '/commerce/coupons/validate',
+      body: <String, dynamic>{
+        'plan_id': planId,
+        'period_key': periodKey,
+        'coupon_code': couponCode.trim(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> createOrder(
     int planId,
     String periodKey, {
@@ -155,6 +216,10 @@ class AppApi {
         if (couponCode?.isNotEmpty == true) 'coupon_code': couponCode,
       },
     );
+  }
+
+  Future<Map<String, dynamic>> getOrderDetail(String tradeNo) {
+    return _get('/commerce/orders/$tradeNo');
   }
 
   Future<Map<String, dynamic>> checkoutOrder(
@@ -192,6 +257,26 @@ class AppApi {
     return _post('/referrals/codes', body: const <String, dynamic>{});
   }
 
+  Future<Map<String, dynamic>> transferReferralBalance(int amountCents) {
+    return _post(
+      '/referrals/transfer-to-balance',
+      body: <String, dynamic>{'amount_cents': amountCents},
+    );
+  }
+
+  Future<Map<String, dynamic>> requestReferralWithdrawal({
+    required String method,
+    required String account,
+  }) {
+    return _post(
+      '/referrals/withdrawals',
+      body: <String, dynamic>{
+        'withdraw_method': method.trim(),
+        'withdraw_account': account.trim(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> redeemGiftCode(String code) {
     return _post(
       '/rewards/redeem',
@@ -205,6 +290,10 @@ class AppApi {
 
   Future<Map<String, dynamic>> getClientVersion() {
     return _get('/client/version');
+  }
+
+  Future<Map<String, dynamic>> getClientDownloads() {
+    return _get('/client/downloads');
   }
 
   Future<void> logout() async {
@@ -246,6 +335,23 @@ class AppApi {
   }) async {
     final uri = await _buildUri(path, null);
     final response = await _client.post(
+      uri,
+      headers: await _headers(withSession: withSession, isJson: true),
+      body: jsonEncode(body),
+    );
+    if (response.statusCode >= 400) {
+      throw _errorFromResponse(response);
+    }
+    return _decode(response.body);
+  }
+
+  Future<Map<String, dynamic>> _patch(
+    String path, {
+    required Map<String, dynamic> body,
+    bool withSession = true,
+  }) async {
+    final uri = await _buildUri(path, null);
+    final response = await _client.patch(
       uri,
       headers: await _headers(withSession: withSession, isJson: true),
       body: jsonEncode(body),
@@ -301,6 +407,12 @@ class AppApi {
       return decoded;
     }
     return <String, dynamic>{'data': decoded};
+  }
+
+  String? _trimmedOrNull(String? raw) {
+    final value = raw?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   AppApiException _errorFromResponse(http.Response response) {

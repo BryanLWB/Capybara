@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,6 +8,7 @@ import '../models/help_article.dart';
 import '../services/api_config.dart';
 import '../services/app_api.dart';
 import '../services/crisp_service.dart';
+import '../services/web_app_facade.dart';
 import '../services/web_crisp_actions.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
@@ -23,17 +26,23 @@ typedef WebHelpArticleLoader = Future<HelpArticleDetail> Function(
   int articleId,
   String language,
 );
+typedef WebHelpChatOpener = Future<bool> Function();
+typedef WebHelpFallbackChatOpener = Future<void> Function();
 
 class WebHelpPage extends StatefulWidget {
   const WebHelpPage({
     super.key,
     this.categoriesLoader,
     this.articleLoader,
+    this.chatOpener,
+    this.fallbackChatOpener,
     this.onUnauthorized,
   });
 
   final WebHelpCategoriesLoader? categoriesLoader;
   final WebHelpArticleLoader? articleLoader;
+  final WebHelpChatOpener? chatOpener;
+  final WebHelpFallbackChatOpener? fallbackChatOpener;
   final VoidCallback? onUnauthorized;
 
   @override
@@ -41,6 +50,7 @@ class WebHelpPage extends StatefulWidget {
 }
 
 class _WebHelpPageState extends State<WebHelpPage> {
+  final WebAppFacade _facade = WebAppFacade();
   String? _language;
   Future<List<HelpCategory>>? _future;
 
@@ -66,17 +76,7 @@ class _WebHelpPageState extends State<WebHelpPage> {
     if (widget.categoriesLoader != null) {
       return widget.categoriesLoader!(language);
     }
-
-    await ApiConfig().refreshSessionCache();
-    final response = await AppApi().getHelpArticles(language: language);
-    final data = response['data'] as Map? ?? const {};
-    final rawCategories = data['categories'];
-    if (rawCategories is! List) return <HelpCategory>[];
-    return rawCategories
-        .whereType<Map>()
-        .map((item) => HelpCategory.fromMap(Map<String, dynamic>.from(item)))
-        .where((item) => item.name.isNotEmpty && item.articles.isNotEmpty)
-        .toList();
+    return _facade.loadHelpCategories(language);
   }
 
   Future<HelpArticleDetail> _loadArticleDetail(
@@ -86,22 +86,16 @@ class _WebHelpPageState extends State<WebHelpPage> {
     if (widget.articleLoader != null) {
       return widget.articleLoader!(articleId, language);
     }
-
-    final response = await AppApi().getHelpArticle(
-      articleId,
-      language: language,
-    );
-    final data = response['data'] as Map? ?? const {};
-    return HelpArticleDetail.fromMap(
-      Map<String, dynamic>.from(data['article'] as Map? ?? const {}),
-    );
+    return _facade.loadHelpArticleDetail(articleId, language);
   }
 
   Future<void> _openChat(BuildContext context, bool isChinese) async {
-    final opened = await WebCrispActions.openChat();
+    final openChat = widget.chatOpener ?? WebCrispActions.openChat;
+    final openFallbackChat = widget.fallbackChatOpener ?? CrispService.openChat;
+    final opened = await openChat();
     if (opened) return;
 
-    await CrispService.openChat();
+    await openFallbackChat();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -115,8 +109,8 @@ class _WebHelpPageState extends State<WebHelpPage> {
   }
 
   void _handleUnauthorized() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await ApiConfig().clearAuth();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ApiConfig().clearAuth());
       if (mounted) {
         widget.onUnauthorized?.call();
       }

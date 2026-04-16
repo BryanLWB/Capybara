@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
 import '../theme/app_colors.dart';
 
 import '../l10n/generated/app_localizations.dart';
@@ -25,6 +28,7 @@ class CapybaraLoader extends StatefulWidget {
 class _CapybaraLoaderState extends State<CapybaraLoader>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  Timer? _tipTimer;
   int _tipIndex = 0;
 
   @override
@@ -36,17 +40,13 @@ class _CapybaraLoaderState extends State<CapybaraLoader>
     )..repeat();
 
     if (widget.showTips) {
-      // Rotate tips every 2 seconds
-      Future.delayed(const Duration(seconds: 2), _rotateTip);
+      _tipTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (!mounted) return;
+        setState(() {
+          _tipIndex++;
+        });
+      });
     }
-  }
-
-  void _rotateTip() {
-    if (!mounted) return;
-    setState(() {
-      _tipIndex++;
-    });
-    Future.delayed(const Duration(seconds: 2), _rotateTip);
   }
 
   List<String> _getLocalizedTips(BuildContext context) {
@@ -65,6 +65,7 @@ class _CapybaraLoaderState extends State<CapybaraLoader>
 
   @override
   void dispose() {
+    _tipTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -145,7 +146,8 @@ class _CapybaraPainter extends CustomPainter {
     // 1. Central Pulsing Core (Solid)
     final pulseScale = 0.8 + 0.2 * math.sin(animation.value * 4 * math.pi);
     paint.style = PaintingStyle.fill;
-    paint.color = color.withValues(alpha: 0.3 + 0.2 * pulseScale); // Use withValues
+    paint.color =
+        color.withValues(alpha: 0.3 + 0.2 * pulseScale); // Use withValues
     paint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
     canvas.drawCircle(Offset.zero, radius * 0.25 * pulseScale, paint);
     paint.maskFilter = null; // Reset mask
@@ -156,17 +158,16 @@ class _CapybaraPainter extends CustomPainter {
     paint.style = PaintingStyle.stroke;
     paint.strokeWidth = strokeWidth * 0.6;
     paint.color = color.withValues(alpha: 0.4); // Use withValues
-    
+
     // Draw segmented inner ring
     for (int i = 0; i < 4; i++) {
-        final double startAngle = i * (math.pi / 2);
-        canvas.drawArc(
-            Rect.fromCircle(center: Offset.zero, radius: radius * 0.55),
-            startAngle,
-            math.pi / 4, // 45 degrees arc
-            false,
-            paint
-        );
+      final double startAngle = i * (math.pi / 2);
+      canvas.drawArc(
+          Rect.fromCircle(center: Offset.zero, radius: radius * 0.55),
+          startAngle,
+          math.pi / 4, // 45 degrees arc
+          false,
+          paint);
     }
     canvas.restore();
 
@@ -177,17 +178,21 @@ class _CapybaraPainter extends CustomPainter {
     for (int i = 0; i < 3; i++) {
       final double phase = i * (2 * math.pi / 3);
       final double progress = (animation.value + i * 0.33) % 1.0;
-      
+
       // Dynamic length wave
-      final double length = (0.25 + 0.2 * math.sin(progress * 2 * math.pi)).abs() * 2 * math.pi;
-      
+      final double length =
+          (0.25 + 0.2 * math.sin(progress * 2 * math.pi)).abs() * 2 * math.pi;
+
       // Gradient-like opacity effect using arc stroke
-      paint.color = color.withValues(alpha: 0.8 + 0.2 * math.sin(progress * 2 * math.pi)); // Use withValues
-      
+      paint.color = color.withValues(
+          alpha:
+              0.8 + 0.2 * math.sin(progress * 2 * math.pi)); // Use withValues
+
       // Outer glow
       paint.maskFilter = const MaskFilter.blur(BlurStyle.solid, 4);
 
-      final rect = Rect.fromCircle(center: Offset.zero, radius: radius - strokeWidth / 2);
+      final rect = Rect.fromCircle(
+          center: Offset.zero, radius: radius - strokeWidth / 2);
       canvas.drawArc(rect, phase, length, false, paint);
     }
 

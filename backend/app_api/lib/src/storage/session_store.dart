@@ -59,6 +59,48 @@ class SessionRecord {
   }
 }
 
+class SubscriptionAccessRecord {
+  SubscriptionAccessRecord({
+    required this.id,
+    required this.upstreamToken,
+    required this.upstreamAuth,
+    required this.createdAt,
+    required this.expiresAt,
+    this.flag,
+  });
+
+  final String id;
+  final String upstreamToken;
+  final String upstreamAuth;
+  final String? flag;
+  final DateTime createdAt;
+  final DateTime expiresAt;
+
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'upstream_token': upstreamToken,
+        'upstream_auth': upstreamAuth,
+        'flag': flag,
+        'created_at': createdAt.toIso8601String(),
+        'expires_at': expiresAt.toIso8601String(),
+      };
+
+  factory SubscriptionAccessRecord.fromJson(Map<String, dynamic> json) {
+    return SubscriptionAccessRecord(
+      id: json['id'] as String? ?? '',
+      upstreamToken: json['upstream_token'] as String? ?? '',
+      upstreamAuth: json['upstream_auth'] as String? ?? '',
+      flag: json['flag'] as String?,
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
 abstract class SessionStore {
   Future<SessionRecord> create({
     required String upstreamToken,
@@ -71,10 +113,21 @@ abstract class SessionStore {
   Future<void> write(SessionRecord record);
 
   Future<void> delete(String sessionId);
+
+  Future<SubscriptionAccessRecord> createSubscriptionAccess({
+    required String upstreamToken,
+    required String upstreamAuth,
+    required Duration ttl,
+    String? flag,
+  });
+
+  Future<SubscriptionAccessRecord?> readSubscriptionAccess(String accessId);
 }
 
 class MemorySessionStore implements SessionStore {
   final Map<String, SessionRecord> _records = <String, SessionRecord>{};
+  final Map<String, SubscriptionAccessRecord> _subscriptionAccess =
+      <String, SubscriptionAccessRecord>{};
 
   @override
   Future<SessionRecord> create({
@@ -114,12 +167,45 @@ class MemorySessionStore implements SessionStore {
   Future<void> write(SessionRecord record) async {
     _records[record.id] = record;
   }
+
+  @override
+  Future<SubscriptionAccessRecord> createSubscriptionAccess({
+    required String upstreamToken,
+    required String upstreamAuth,
+    required Duration ttl,
+    String? flag,
+  }) async {
+    final now = DateTime.now().toUtc();
+    final record = SubscriptionAccessRecord(
+      id: _newAccessId(),
+      upstreamToken: upstreamToken,
+      upstreamAuth: upstreamAuth,
+      flag: flag,
+      createdAt: now,
+      expiresAt: now.add(ttl),
+    );
+    _subscriptionAccess[record.id] = record;
+    return record;
+  }
+
+  @override
+  Future<SubscriptionAccessRecord?> readSubscriptionAccess(
+      String accessId) async {
+    final record = _subscriptionAccess[accessId];
+    if (record == null) return null;
+    if (record.isExpired) {
+      _subscriptionAccess.remove(accessId);
+      return null;
+    }
+    return record;
+  }
 }
 
 class RedisSessionStore implements SessionStore {
   RedisSessionStore(this._client);
 
   static const String _prefix = 'app_api:session:';
+  static const String _subscriptionPrefix = 'app_api:subscription_access:';
   final RedisClient _client;
 
   @override
@@ -180,6 +266,50 @@ class RedisSessionStore implements SessionStore {
       ttl,
     );
   }
+
+  @override
+  Future<SubscriptionAccessRecord> createSubscriptionAccess({
+    required String upstreamToken,
+    required String upstreamAuth,
+    required Duration ttl,
+    String? flag,
+  }) async {
+    final now = DateTime.now().toUtc();
+    final record = SubscriptionAccessRecord(
+      id: _newAccessId(),
+      upstreamToken: upstreamToken,
+      upstreamAuth: upstreamAuth,
+      flag: flag,
+      createdAt: now,
+      expiresAt: now.add(ttl),
+    );
+    await _client.setex(
+      '$_subscriptionPrefix${record.id}',
+      jsonEncode(record.toJson()),
+      ttl.inSeconds,
+    );
+    return record;
+  }
+
+  @override
+  Future<SubscriptionAccessRecord?> readSubscriptionAccess(
+      String accessId) async {
+    final key = '$_subscriptionPrefix$accessId';
+    final value = await _client.get(key);
+    if (value == null || value.toString().isEmpty) {
+      return null;
+    }
+    final decoded = jsonDecode(value.toString());
+    if (decoded is! Map<String, dynamic>) {
+      return null;
+    }
+    final record = SubscriptionAccessRecord.fromJson(decoded);
+    if (record.isExpired) {
+      await _client.delete([key]);
+      return null;
+    }
+    return record;
+  }
 }
 
 Future<SessionStore> createSessionStore(ServiceConfig config) async {
@@ -200,10 +330,18 @@ Future<SessionStore> createSessionStore(ServiceConfig config) async {
 }
 
 String _newSessionId() {
+  return _randomId('as_');
+}
+
+String _newAccessId() {
+  return _randomId('cl_');
+}
+
+String _randomId(String prefix) {
   const alphabet =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   final random = Random.secure();
-  final buffer = StringBuffer('as_');
+  final buffer = StringBuffer(prefix);
   for (var i = 0; i < 40; i++) {
     buffer.write(alphabet[random.nextInt(alphabet.length)]);
   }

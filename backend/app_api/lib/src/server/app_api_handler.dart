@@ -38,7 +38,7 @@ Middleware _cors() {
         'access-control-allow-origin':
             origin == null || origin.isEmpty ? '*' : origin,
         'vary': 'Origin',
-        'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+        'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
         'access-control-allow-headers':
             'Authorization, Content-Type, Accept, Origin',
         'access-control-max-age': '86400',
@@ -94,6 +94,7 @@ class _AppApiService {
   final Logger _logger;
   final Router _router;
   final Random _random = Random.secure();
+  static const Duration _subscriptionAccessTtl = Duration(days: 365);
 
   Router get router => _router;
 
@@ -114,16 +115,26 @@ class _AppApiService {
     _router.get('/api/app/v1/catalog/plans', _plans);
     _router.get('/api/app/v1/account/profile', _profile);
     _router.get('/api/app/v1/account/preferences', _userConfig);
+    _router.patch('/api/app/v1/account/notifications', _updateNotifications);
+    _router.post('/api/app/v1/account/password/change', _changePassword);
     _router.get('/api/app/v1/account/subscription', _subscriptionSummary);
     _router.get(
         '/api/app/v1/account/subscription/content', _subscriptionContent);
+    _router.post(
+        '/api/app/v1/account/subscription/reset', _resetSubscriptionSecurity);
+    _router.post('/api/app/v1/account/subscription/access-link',
+        _createSubscriptionAccessLink);
+    _router.get('/api/app/v1/client/subscription/<accessId>',
+        _subscriptionContentByAccess);
     _router.get('/api/app/v1/content/notices', _notices);
     _router.get('/api/app/v1/content/help/articles', _helpArticles);
     _router.get('/api/app/v1/content/help/articles/<articleId>', _helpArticle);
 
     _router.get('/api/app/v1/commerce/payment-methods', _paymentMethods);
+    _router.post('/api/app/v1/commerce/coupons/validate', _validateCoupon);
     _router.get('/api/app/v1/commerce/orders', _orders);
     _router.post('/api/app/v1/commerce/orders', _createOrder);
+    _router.get('/api/app/v1/commerce/orders/<orderId>', _orderDetail);
     _router.post(
         '/api/app/v1/commerce/orders/<orderId>/checkout', _checkoutOrder);
     _router.get('/api/app/v1/commerce/orders/<orderId>/status', _orderStatus);
@@ -132,11 +143,15 @@ class _AppApiService {
     _router.get('/api/app/v1/referrals/overview', _inviteOverview);
     _router.get('/api/app/v1/referrals/records', _inviteRecords);
     _router.post('/api/app/v1/referrals/codes', _generateInviteCode);
+    _router.post(
+        '/api/app/v1/referrals/transfer-to-balance', _transferInviteBalance);
+    _router.post('/api/app/v1/referrals/withdrawals', _requestWithdrawal);
 
     _router.post('/api/app/v1/rewards/redeem', _redeemGift);
 
     _router.get('/api/app/v1/client/config', _clientConfig);
     _router.get('/api/app/v1/client/version', _clientVersion);
+    _router.get('/api/app/v1/client/downloads', _clientDownloads);
 
     _router.all('/<ignored|.*>', (Request request) {
       return _error('route.not_found', 'Request failed', HttpStatus.notFound);
@@ -173,9 +188,9 @@ class _AppApiService {
       final auth = await upstreamApi.register(
         email: body['email']?.toString() ?? '',
         password: body['password']?.toString() ?? '',
-        inviteCode: body['invite_code']?.toString(),
-        emailCode: body['email_code']?.toString(),
-        recaptchaData: body['captcha_payload']?.toString(),
+        inviteCode: _trimmedOrNull(body['invite_code']),
+        emailCode: _trimmedOrNull(body['email_code']),
+        recaptchaData: _trimmedOrNull(body['captcha_payload']),
       );
       final record = await sessionStore.create(
         upstreamToken: auth.token,
@@ -278,6 +293,50 @@ class _AppApiService {
     });
   }
 
+  Future<Response> _updateNotifications(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    return _withUpstreamGuard(() async {
+      final auth = _toAuth(session);
+      await upstreamApi.updateUserNotifications(
+        auth,
+        remindExpire: _toBool(body['expiry']),
+        remindTraffic: _toBool(body['traffic']),
+      );
+      final profile = await upstreamApi.fetchUserProfile(auth);
+      return _ok(<String, dynamic>{
+        'updated': true,
+        'account': _mapAccount(profile['data'] as Map? ?? const {}),
+      });
+    });
+  }
+
+  Future<Response> _changePassword(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    final oldPassword = body['old_password']?.toString() ?? '';
+    final newPassword = body['new_password']?.toString() ?? '';
+    if (oldPassword.isEmpty || newPassword.length < 8) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      await upstreamApi.changePassword(
+        _toAuth(session),
+        oldPassword: oldPassword,
+        newPassword: newPassword,
+      );
+      return _ok(<String, dynamic>{'changed': true});
+    });
+  }
+
   Future<Response> _subscriptionSummary(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
@@ -303,6 +362,85 @@ class _AppApiService {
       final content = await upstreamApi.fetchSubscriptionContent(
         _toAuth(session),
         flag: request.url.queryParameters['flag'],
+      );
+      return Response.ok(
+        content,
+        headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
+      );
+    } on UpstreamException catch (error) {
+      return _error(
+        'subscription.unavailable',
+        _safeMessage(error.statusCode),
+        error.statusCode >= 500 ? HttpStatus.badGateway : HttpStatus.badRequest,
+      );
+    }
+  }
+
+  Future<Response> _resetSubscriptionSecurity(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final auth = _toAuth(session);
+      await upstreamApi.resetSubscriptionSecurity(auth);
+      final access = await sessionStore.createSubscriptionAccess(
+        upstreamToken: session.upstreamToken,
+        upstreamAuth: session.upstreamAuth,
+        ttl: _subscriptionAccessTtl,
+      );
+      return _ok(<String, dynamic>{
+        'reset': true,
+        'subscription': <String, dynamic>{
+          'access_url': _subscriptionAccessUrl(request, access.id),
+          'expires_at': access.expiresAt.toIso8601String(),
+        },
+      });
+    });
+  }
+
+  Future<Response> _createSubscriptionAccessLink(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    final flag = _trimmedOrNull(body['flag']);
+    final access = await sessionStore.createSubscriptionAccess(
+      upstreamToken: session.upstreamToken,
+      upstreamAuth: session.upstreamAuth,
+      flag: flag,
+      ttl: _subscriptionAccessTtl,
+    );
+    return _ok(<String, dynamic>{
+      'subscription': <String, dynamic>{
+        'access_url': _subscriptionAccessUrl(request, access.id),
+        'expires_at': access.expiresAt.toIso8601String(),
+      },
+    });
+  }
+
+  Future<Response> _subscriptionContentByAccess(
+    Request request,
+    String accessId,
+  ) async {
+    final record = await sessionStore.readSubscriptionAccess(accessId.trim());
+    if (record == null) {
+      return Response(
+        HttpStatus.notFound,
+        body: '',
+        headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
+      );
+    }
+    try {
+      final content = await upstreamApi.fetchSubscriptionContent(
+        UpstreamAuth(
+          token: record.upstreamToken,
+          authorization: record.upstreamAuth,
+        ),
+        flag: record.flag,
       );
       return Response.ok(
         content,
@@ -402,6 +540,33 @@ class _AppApiService {
     });
   }
 
+  Future<Response> _validateCoupon(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    final planId = (body['plan_id'] as num?)?.toInt() ?? 0;
+    final period = _trimmedOrNull(body['period_key']);
+    final couponCode = _trimmedOrNull(body['coupon_code']);
+    if (planId <= 0 || period == null || couponCode == null) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      final coupon = await upstreamApi.validateCoupon(
+        _toAuth(session),
+        planId: planId,
+        period: period,
+        couponCode: couponCode,
+      );
+      return _ok(<String, dynamic>{
+        'valid': true,
+        'coupon': _mapCoupon(coupon['data'] as Map? ?? const {}),
+      });
+    });
+  }
+
   Future<Response> _createOrder(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
@@ -418,6 +583,27 @@ class _AppApiService {
       );
       return _ok(<String, dynamic>{
         'order_ref': orderRef,
+      });
+    });
+  }
+
+  Future<Response> _orderDetail(Request request, String orderId) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final normalizedOrderId = orderId.trim();
+    if (normalizedOrderId.isEmpty) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      final detail = await upstreamApi.fetchOrderDetail(
+        _toAuth(session),
+        tradeNo: normalizedOrderId,
+      );
+      return _ok(<String, dynamic>{
+        'order': _mapOrderDetail(detail['data'] as Map? ?? const {}),
       });
     });
   }
@@ -508,6 +694,62 @@ class _AppApiService {
     });
   }
 
+  Future<Response> _transferInviteBalance(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    final amountCents = _toNum(body['amount_cents']).toInt();
+    if (amountCents <= 0) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      final auth = _toAuth(session);
+      await upstreamApi.transferCommissionToBalance(
+        auth,
+        amountCents: amountCents,
+      );
+      final responses = await Future.wait<Map<String, dynamic>>([
+        upstreamApi.fetchUserProfile(auth),
+        upstreamApi.fetchInviteOverview(auth),
+      ]);
+      final profile = responses[0]['data'] as Map? ?? const {};
+      final overview = responses[1]['data'] as Map? ?? const {};
+      return _ok(<String, dynamic>{
+        'transferred': true,
+        'account': _mapAccount(profile),
+        'referrals': <String, dynamic>{
+          'codes': _mapInviteCodes(overview['codes'] as List? ?? const []),
+          'metrics': _mapInviteMetrics(overview['stat']),
+        },
+      });
+    });
+  }
+
+  Future<Response> _requestWithdrawal(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    final method = _trimmedOrNull(body['withdraw_method']);
+    final account = _trimmedOrNull(body['withdraw_account']);
+    if (method == null || account == null) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      await upstreamApi.requestCommissionWithdrawal(
+        _toAuth(session),
+        method: method,
+        account: account,
+      );
+      return _ok(<String, dynamic>{'created': true});
+    });
+  }
+
   Future<Response> _redeemGift(Request request) async {
     final session = await _requireSession(request);
     if (session == null) {
@@ -555,6 +797,21 @@ class _AppApiService {
     });
   }
 
+  Future<Response> _clientDownloads(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final versionData =
+          await upstreamApi.fetchClientVersion(_toAuth(session));
+      return _ok(<String, dynamic>{
+        'items': _mapClientDownloads(versionData['data']),
+      });
+    });
+  }
+
   Future<Response> _withUpstreamGuard(
       Future<Response> Function() action) async {
     try {
@@ -584,6 +841,12 @@ class _AppApiService {
       throw const FormatException('expected a json object');
     }
     return decoded;
+  }
+
+  String? _trimmedOrNull(Object? raw) {
+    final value = raw?.toString().trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   Future<SessionRecord?> _requireSession(Request request) async {
@@ -625,6 +888,8 @@ class _AppApiService {
       'plan_id': raw['plan_id'] ?? 0,
       'transfer_bytes': raw['transfer_enable'] ?? 0,
       'expiry_at': raw['expired_at'] ?? 0,
+      'remind_expire': _toBool(raw['remind_expire']),
+      'remind_traffic': _toBool(raw['remind_traffic']),
       'avatar_url': raw['avatar_url'],
       'user_ref': raw['uuid'],
     };
@@ -647,8 +912,7 @@ class _AppApiService {
       'plan_id': raw['id'] ?? 0,
       'title': raw['name'] ?? 'Plan',
       'summary': raw['content'],
-      'transfer_bytes':
-          _toNum(raw['transfer_enable']).toInt() * 1024 * 1024 * 1024,
+      'transfer_bytes': _toNum(raw['transfer_enable']).toInt(),
       'monthly_amount': raw['month_price'],
       'quarterly_amount': raw['quarter_price'],
       'half_year_amount': raw['half_year_price'],
@@ -658,6 +922,11 @@ class _AppApiService {
       'once_amount': raw['onetime_price'],
       'reset_amount': raw['reset_price'],
       'reset_method': raw['reset_traffic_method'],
+      'device_limit': raw['device_limit'],
+      'capacity_limit': raw['capacity_limit'],
+      'tags': raw['tags'] ?? const [],
+      'sell': raw['sell'],
+      'renew': raw['renew'],
     };
   }
 
@@ -723,6 +992,18 @@ class _AppApiService {
     };
   }
 
+  Map<String, dynamic> _mapCoupon(Map raw) {
+    return <String, dynamic>{
+      'coupon_id': raw['id'] ?? 0,
+      'code': raw['code'] ?? '',
+      'name': raw['name'] ?? '',
+      'type_code': raw['type'] ?? 0,
+      'value': raw['value'] ?? 0,
+      'limit_periods': raw['limit_period'] ?? const [],
+      'limit_plan_ids': raw['limit_plan_ids'] ?? const [],
+    };
+  }
+
   Map<String, dynamic> _mapOrder(Map<String, dynamic> raw) {
     final plan = raw['plan'];
     return <String, dynamic>{
@@ -735,11 +1016,41 @@ class _AppApiService {
     };
   }
 
+  Map<String, dynamic> _mapOrderDetail(Map raw) {
+    final plan = raw['plan'];
+    final payment = raw['payment'];
+    final total = _toNum(raw['total_amount']).toInt();
+    final handling = _toNum(raw['handling_amount']).toInt();
+    return <String, dynamic>{
+      'order_ref': raw['trade_no'] ?? '',
+      'state_code': raw['status'] ?? 0,
+      'period_key': raw['period'] ?? '',
+      'amount_total': total,
+      'amount_payable': total + handling,
+      'amount_discount': raw['discount_amount'] ?? 0,
+      'amount_balance': raw['balance_amount'] ?? 0,
+      'amount_refund': raw['refund_amount'] ?? 0,
+      'amount_surplus': raw['surplus_amount'] ?? 0,
+      'amount_handling': handling,
+      'created_at': raw['created_at'] ?? 0,
+      'updated_at': raw['updated_at'] ?? 0,
+      'plan': plan is Map ? _mapPlan(Map<String, dynamic>.from(plan)) : null,
+      'payment_method': payment is Map
+          ? _mapPaymentMethod(Map<String, dynamic>.from(payment))
+          : null,
+    };
+  }
+
   Map<String, dynamic> _mapCheckoutAction(Map<String, dynamic> raw) {
     final payload = raw['data'];
-    final type = raw['type'];
+    final type = _toNum(raw['type']).toInt();
     return <String, dynamic>{
-      'kind': payload is String ? 'redirect' : 'inline',
+      'kind': switch (type) {
+        1 => 'redirect',
+        0 => 'qr_code',
+        -1 => 'completed',
+        _ => payload is String ? 'redirect' : 'inline',
+      },
       'payload': payload,
       'code': type,
     };
@@ -765,7 +1076,7 @@ class _AppApiService {
   Map<String, dynamic> _mapInviteMetrics(Object? rawStat) {
     final stat = rawStat is List ? rawStat : const [];
     return <String, dynamic>{
-      'registered_users': stat.length > 0 ? stat[0] ?? 0 : 0,
+      'registered_users': stat.isNotEmpty ? stat[0] ?? 0 : 0,
       'settled_amount': stat.length > 1 ? stat[1] ?? 0 : 0,
       'pending_amount': stat.length > 2 ? stat[2] ?? 0 : 0,
       'rate_percent': stat.length > 3 ? stat[3] ?? 0 : 0,
@@ -828,6 +1139,79 @@ class _AppApiService {
     };
   }
 
+  List<Map<String, dynamic>> _mapClientDownloads(Object? raw) {
+    final data = raw is Map ? raw : const <String, dynamic>{};
+    return <Map<String, dynamic>>[
+      _mapClientDownload(
+        data,
+        platform: 'windows',
+        label: 'Windows',
+        versionField: 'windows_version',
+        urlField: 'windows_download_url',
+      ),
+      _mapClientDownload(
+        data,
+        platform: 'macos',
+        label: 'macOS',
+        versionField: 'macos_version',
+        urlField: 'macos_download_url',
+      ),
+      _mapClientDownload(
+        data,
+        platform: 'android',
+        label: 'Android',
+        versionField: 'android_version',
+        urlField: 'android_download_url',
+      ),
+      <String, dynamic>{
+        'platform': 'ios',
+        'label': 'iOS',
+        'version': '',
+        'download_url': '',
+        'available': false,
+      },
+    ];
+  }
+
+  Map<String, dynamic> _mapClientDownload(
+    Map data, {
+    required String platform,
+    required String label,
+    required String versionField,
+    required String urlField,
+  }) {
+    final url = data[urlField]?.toString().trim() ?? '';
+    return <String, dynamic>{
+      'platform': platform,
+      'label': label,
+      'version': data[versionField]?.toString() ?? '',
+      'download_url': url,
+      'available': url.isNotEmpty,
+    };
+  }
+
+  String _subscriptionAccessUrl(Request request, String accessId) {
+    final origin = _requestOrigin(request);
+    return origin.replace(
+      path: '/api/app/v1/client/subscription/$accessId',
+      queryParameters: const <String, String>{},
+    ).toString();
+  }
+
+  Uri _requestOrigin(Request request) {
+    final forwardedProto = request.headers['x-forwarded-proto'];
+    final forwardedHost = request.headers['x-forwarded-host'];
+    final host = forwardedHost ?? request.headers['host'];
+    if (host != null && host.isNotEmpty) {
+      return Uri(
+        scheme: forwardedProto ?? request.requestedUri.scheme,
+        host: host.split(':').first,
+        port: host.contains(':') ? int.tryParse(host.split(':').last) : null,
+      );
+    }
+    return request.requestedUri.replace(path: '', queryParameters: const {});
+  }
+
   String _codeForStatus(int status) {
     return switch (status) {
       401 => 'auth.invalid',
@@ -867,5 +1251,18 @@ class _AppApiService {
     if (value is num) return value;
     if (value is String) return num.tryParse(value) ?? 0;
     return 0;
+  }
+
+  bool _toBool(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == '1' ||
+          normalized == 'true' ||
+          normalized == 'yes' ||
+          normalized == 'on';
+    }
+    return false;
   }
 }

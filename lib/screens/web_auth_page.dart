@@ -14,17 +14,26 @@ import '../widgets/web_crisp_widget.dart';
 enum WebAuthMode { login, register, reset }
 
 class WebAuthPage extends StatefulWidget {
-  const WebAuthPage({super.key, required this.onAuthed});
+  const WebAuthPage({
+    super.key,
+    required this.onAuthed,
+    this.api,
+    this.config,
+    this.initialUri,
+  });
 
   final VoidCallback onAuthed;
+  final PanelApi? api;
+  final ApiConfig? config;
+  final Uri? initialUri;
 
   @override
   State<WebAuthPage> createState() => _WebAuthPageState();
 }
 
 class _WebAuthPageState extends State<WebAuthPage> {
-  final _api = PanelApi();
-  final _config = ApiConfig();
+  late final PanelApi _api;
+  late final ApiConfig _config;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -43,8 +52,25 @@ class _WebAuthPageState extends State<WebAuthPage> {
 
   bool _isChinese(BuildContext context) =>
       Localizations.localeOf(context).languageCode.toLowerCase().startsWith(
-        'zh',
-      );
+            'zh',
+          );
+
+  @override
+  void initState() {
+    super.initState();
+    _config = widget.config ?? ApiConfig();
+    _api = widget.api ?? PanelApi(config: _config);
+    _prefillInviteCodeFromQuery();
+  }
+
+  void _prefillInviteCodeFromQuery() {
+    final queryParameters = (widget.initialUri ?? Uri.base).queryParameters;
+    final inviteCode =
+        queryParameters['invite_code'] ?? queryParameters['code'];
+    if (inviteCode == null || inviteCode.trim().isEmpty) return;
+    _mode = WebAuthMode.register;
+    _inviteController.text = inviteCode.trim();
+  }
 
   @override
   void dispose() {
@@ -107,9 +133,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
 
       widget.onAuthed();
     } catch (error) {
-      final message = error is PanelApiException
-          ? error.message
-          : error.toString();
+      final message =
+          error is PanelApiException ? error.message : error.toString();
       if (mounted) {
         setState(() {
           _message = message;
@@ -142,9 +167,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
       }
       _startCountdown();
     } catch (error) {
-      final message = error is PanelApiException
-          ? error.message
-          : error.toString();
+      final message =
+          error is PanelApiException ? error.message : error.toString();
       if (mounted) {
         setState(() {
           _message = message;
@@ -199,7 +223,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
                         ? Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Expanded(child: _buildHeroPanel(context, isChinese)),
+                              Expanded(
+                                  child: _buildHeroPanel(context, isChinese)),
                               const SizedBox(width: 32),
                               SizedBox(
                                 width: 460,
@@ -215,7 +240,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
                 ),
               ),
             ),
-            const Positioned.fill(child: IgnorePointer(child: WebCrispWidget())),
+            const Positioned.fill(
+                child: IgnorePointer(child: WebCrispWidget())),
           ],
         ),
       ),
@@ -232,9 +258,9 @@ class _WebAuthPageState extends State<WebAuthPage> {
           Text(
             'Capybara',
             style: Theme.of(context).textTheme.displayLarge?.copyWith(
-              fontSize: 56,
-              fontWeight: FontWeight.w700,
-            ),
+                  fontSize: 56,
+                  fontWeight: FontWeight.w700,
+                ),
           ),
           const SizedBox(height: 16),
           Text(
@@ -242,9 +268,9 @@ class _WebAuthPageState extends State<WebAuthPage> {
                 ? '一个更适合网页访问的轻量控制台入口。'
                 : 'A focused web console experience built on the same Capybara design system.',
             style: Theme.of(context).textTheme.displayMedium?.copyWith(
-              fontSize: 28,
-              height: 1.3,
-            ),
+                  fontSize: 28,
+                  height: 1.3,
+                ),
           ),
           const SizedBox(height: 18),
           Text(
@@ -252,9 +278,9 @@ class _WebAuthPageState extends State<WebAuthPage> {
                 ? '登录后你可以查看公告、订阅概览、快捷入口，并通过右下角客服浮窗直接联系支持。'
                 : 'Sign in to view announcements, subscription summaries, shortcuts, and reach support from the Crisp bubble.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontSize: 16,
-              height: 1.7,
-            ),
+                  fontSize: 16,
+                  height: 1.7,
+                ),
           ),
         ],
       ),
@@ -272,17 +298,17 @@ class _WebAuthPageState extends State<WebAuthPage> {
             'Capybara',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.displayMedium?.copyWith(
-              fontSize: 34,
-            ),
+                  fontSize: 34,
+                ),
           ),
           const SizedBox(height: 10),
           Text(
             _title(isChinese),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
+                  fontSize: 16,
+                  color: AppColors.textSecondary,
+                ),
           ),
           const SizedBox(height: 28),
           _buildTextField(
@@ -317,9 +343,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
                 ? (isChinese ? '新密码' : 'New Password')
                 : (isChinese ? '密码' : 'Password'),
             icon: Icons.lock_outline_rounded,
-            obscureText: _mode == WebAuthMode.reset
-                ? _hideNewPassword
-                : _hidePassword,
+            obscureText:
+                _mode == WebAuthMode.reset ? _hideNewPassword : _hidePassword,
             suffix: IconButton(
               onPressed: () {
                 setState(() {
@@ -444,9 +469,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
     return TextButton(
       onPressed: _countdown > 0 ? null : _sendVerify,
       child: Text(
-        _countdown > 0
-            ? '${_countdown}s'
-            : (isChinese ? '获取验证码' : 'Send Code'),
+        _countdown > 0 ? '${_countdown}s' : (isChinese ? '获取验证码' : 'Send Code'),
       ),
     );
   }
@@ -479,7 +502,9 @@ class _WebAuthPageState extends State<WebAuthPage> {
       case WebAuthMode.register:
         return isChinese ? '创建一个新的账号' : 'Create a new account';
       case WebAuthMode.reset:
-        return isChinese ? '通过邮箱验证码重置密码' : 'Reset your password with email verification';
+        return isChinese
+            ? '通过邮箱验证码重置密码'
+            : 'Reset your password with email verification';
     }
   }
 

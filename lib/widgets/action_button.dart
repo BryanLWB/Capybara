@@ -62,7 +62,7 @@ class ActionButton extends StatelessWidget {
                 const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CapybaraLoader(size: 20, color: Colors.white),
+                  child: CapybaraLoader(size: 16, color: Colors.white),
                 )
               else
                 Icon(
@@ -90,4 +90,3 @@ class ActionButton extends StatelessWidget {
     );
   }
 }
-

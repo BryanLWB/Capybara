@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../models/user_info.dart';
+import '../models/web_client_download.dart';
 import '../models/web_home_view_data.dart';
 import '../models/web_shell_section.dart';
 import '../services/api_config.dart';
+import '../services/app_api.dart';
 import '../services/panel_api.dart';
-import '../services/user_data_service.dart';
+import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/animated_card.dart';
@@ -13,6 +17,10 @@ import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
 
 typedef WebHomeDataLoader = Future<WebHomeViewData> Function(bool forceRefresh);
+typedef WebSubscriptionAccessLinkCreator = Future<String> Function(
+    String? flag);
+typedef WebClientDownloadsLoader = Future<List<WebClientDownloadItem>>
+    Function();
 
 class WebHomePage extends StatefulWidget {
   const WebHomePage({
@@ -20,19 +28,25 @@ class WebHomePage extends StatefulWidget {
     required this.onNavigate,
     required this.onUnauthorized,
     this.dataLoader,
+    this.subscriptionLinkCreator,
+    this.downloadsLoader,
   });
 
   final ValueChanged<WebShellSection> onNavigate;
   final VoidCallback onUnauthorized;
   final WebHomeDataLoader? dataLoader;
+  final WebSubscriptionAccessLinkCreator? subscriptionLinkCreator;
+  final WebClientDownloadsLoader? downloadsLoader;
 
   @override
   State<WebHomePage> createState() => _WebHomePageState();
 }
 
 class _WebHomePageState extends State<WebHomePage> {
-  final _userDataService = UserDataService();
+  final _facade = WebAppFacade();
   late Future<WebHomeViewData> _future;
+  String _selectedPlatform = 'ios';
+  bool _quickActionBusy = false;
 
   @override
   void initState() {
@@ -45,24 +59,7 @@ class _WebHomePageState extends State<WebHomePage> {
       return widget.dataLoader!(forceRefresh);
     }
 
-    await ApiConfig().refreshSessionCache();
-    final results = await Future.wait([
-      _userDataService.getAccountPageData(forceRefresh: forceRefresh),
-      _userDataService.getPlans(forceRefresh: forceRefresh),
-      _userDataService.getNotices(forceRefresh: forceRefresh),
-    ]);
-    final accountData = Map<String, dynamic>.from(
-      results[0] as Map<String, dynamic>,
-    );
-
-    return WebHomeViewData.fromSources(
-      user: accountData['user'] as UserInfo,
-      subscription: Map<String, dynamic>.from(
-        accountData['subscribe'] as Map? ?? const {},
-      ),
-      plans: (results[1] as List<Map<String, dynamic>>),
-      notices: (results[2] as List<Map<String, dynamic>>),
-    );
+    return _facade.loadHomeData(forceRefresh: forceRefresh);
   }
 
   bool _isChinese(BuildContext context) =>
@@ -77,6 +74,137 @@ class _WebHomePageState extends State<WebHomePage> {
         widget.onUnauthorized();
       }
     });
+  }
+
+  Future<String> _createAccessLink() async {
+    final flag = _flagForPlatform(_selectedPlatform);
+    if (widget.subscriptionLinkCreator != null) {
+      return widget.subscriptionLinkCreator!(flag);
+    }
+    return _facade.createSubscriptionAccessLink(flag: flag);
+  }
+
+  Future<List<WebClientDownloadItem>> _loadDownloads() async {
+    if (widget.downloadsLoader != null) {
+      return widget.downloadsLoader!();
+    }
+    return _facade.loadClientDownloads();
+  }
+
+  Future<void> _copySubscriptionLink(bool isChinese) async {
+    if (_quickActionBusy) return;
+    setState(() => _quickActionBusy = true);
+    try {
+      final link = await _createAccessLink();
+      if (link.isEmpty) {
+        throw AppApiException(statusCode: 502, message: 'Request failed');
+      }
+      await Clipboard.setData(ClipboardData(text: link));
+      if (!mounted) return;
+      _showSnack(
+        isChinese ? '订阅链接已复制到剪贴板。' : 'Subscription link copied.',
+      );
+    } catch (error) {
+      _handleQuickActionError(error, isChinese);
+    } finally {
+      if (mounted) setState(() => _quickActionBusy = false);
+    }
+  }
+
+  Future<void> _showSubscriptionQr(bool isChinese) async {
+    if (_quickActionBusy) return;
+    setState(() => _quickActionBusy = true);
+    try {
+      final link = await _createAccessLink();
+      if (link.isEmpty) {
+        throw AppApiException(statusCode: 502, message: 'Request failed');
+      }
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _SubscriptionQrDialog(
+          title: isChinese ? '二维码订阅' : 'QR Subscribe',
+          subtitle: isChinese
+              ? '使用客户端扫描此二维码导入订阅。'
+              : 'Scan this code with a client to import the subscription.',
+          closeLabel: isChinese ? '关闭' : 'Close',
+          link: link,
+        ),
+      );
+    } catch (error) {
+      _handleQuickActionError(error, isChinese);
+    } finally {
+      if (mounted) setState(() => _quickActionBusy = false);
+    }
+  }
+
+  Future<void> _downloadClient(bool isChinese) async {
+    if (_quickActionBusy) return;
+    setState(() => _quickActionBusy = true);
+    try {
+      final downloads = await _loadDownloads();
+      WebClientDownloadItem? selected;
+      for (final item in downloads) {
+        if (item.platform.toLowerCase() == _selectedPlatform) {
+          selected = item;
+          break;
+        }
+      }
+      final url = selected?.downloadUrl;
+      if (selected == null || !selected.available || url == null) {
+        if (!mounted) return;
+        _showSnack(
+          isChinese
+              ? '后台还没有配置该平台下载地址，已切到帮助页。'
+              : 'No download is configured for this platform. Opening Help.',
+        );
+        widget.onNavigate(WebShellSection.help);
+        return;
+      }
+      final uri = Uri.tryParse(url);
+      if (uri == null) {
+        throw AppApiException(statusCode: 502, message: 'Request failed');
+      }
+      final opened = await launchUrl(uri, webOnlyWindowName: '_blank');
+      if (!opened && mounted) {
+        _showSnack(isChinese ? '无法打开下载地址。' : 'Unable to open download.');
+      }
+    } catch (error) {
+      _handleQuickActionError(error, isChinese);
+    } finally {
+      if (mounted) setState(() => _quickActionBusy = false);
+    }
+  }
+
+  void _handleQuickActionError(Object error, bool isChinese) {
+    if (error is AppApiException &&
+        (error.statusCode == 401 || error.statusCode == 403)) {
+      _handleUnauthorized();
+      return;
+    }
+    if (!mounted) return;
+    _showSnack(error.toString());
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  String _flagForPlatform(String platform) {
+    switch (platform) {
+      case 'ios':
+        return 'shadowrocket';
+      case 'android':
+        return 'clashmetaforandroid';
+      case 'macos':
+        return 'clash';
+      case 'windows':
+        return 'clash';
+      default:
+        return 'clash';
+    }
   }
 
   @override
@@ -505,10 +633,10 @@ class _WebHomePageState extends State<WebHomePage> {
     bool dense = false,
   }) {
     final platformButtons = [
-      _PlatformGhostButton(label: 'iOS'),
-      _PlatformGhostButton(label: 'Android'),
-      _PlatformGhostButton(label: 'macOS'),
-      _PlatformGhostButton(label: 'Windows'),
+      const _PlatformOption(keyName: 'ios', label: 'iOS'),
+      const _PlatformOption(keyName: 'android', label: 'Android'),
+      const _PlatformOption(keyName: 'macos', label: 'macOS'),
+      const _PlatformOption(keyName: 'windows', label: 'Windows'),
     ];
 
     final actions = [
@@ -516,22 +644,34 @@ class _WebHomePageState extends State<WebHomePage> {
         icon: Icons.download_rounded,
         title: isChinese ? '下载客户端' : 'Download Client',
         subtitle: isChinese
-            ? '客户端下载入口将在购买页完成后接入。'
-            : 'Client download will be wired after the purchase page is ready.',
+            ? '从后台配置的下载入口获取当前平台客户端。'
+            : 'Open the configured download for the selected platform.',
+        statusLabel: _quickActionBusy
+            ? (isChinese ? '处理中' : 'Working')
+            : (isChinese ? '打开' : 'Open'),
+        onTap: () => _downloadClient(isChinese),
       ),
       _UsageAction(
         icon: Icons.link_rounded,
         title: isChinese ? '复制订阅链接' : 'Copy Subscription Link',
         subtitle: isChinese
-            ? '后续会直接提供复制与分发能力。'
-            : 'Direct copy and share support will be added next.',
+            ? '复制中性订阅链接，不暴露上游面板地址。'
+            : 'Copy a neutral subscription link without exposing upstream.',
+        statusLabel: _quickActionBusy
+            ? (isChinese ? '处理中' : 'Working')
+            : (isChinese ? '复制' : 'Copy'),
+        onTap: () => _copySubscriptionLink(isChinese),
       ),
       _UsageAction(
         icon: Icons.qr_code_2_rounded,
         title: isChinese ? '二维码订阅' : 'QR Subscribe',
         subtitle: isChinese
-            ? '二维码订阅将在后续页面中接入。'
-            : 'QR-based subscription will be connected in a later step.',
+            ? '生成当前平台可用的中性订阅二维码。'
+            : 'Generate a neutral subscription QR for this platform.',
+        statusLabel: _quickActionBusy
+            ? (isChinese ? '处理中' : 'Working')
+            : (isChinese ? '生成' : 'Show'),
+        onTap: () => _showSubscriptionQr(isChinese),
       ),
     ];
 
@@ -548,8 +688,8 @@ class _WebHomePageState extends State<WebHomePage> {
           const SizedBox(height: 10),
           Text(
             isChinese
-                ? '结构先对齐网页首页，真实下载和订阅动作后续逐步接入。'
-                : 'The structure is ready first. Real download and subscribe actions will be wired in later steps.',
+                ? '选择平台后，可以下载客户端、复制订阅或扫码导入。'
+                : 'Choose a platform, then download, copy, or import by QR.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -558,7 +698,17 @@ class _WebHomePageState extends State<WebHomePage> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: platformButtons,
+            children: platformButtons
+                .map(
+                  (platform) => _PlatformGhostButton(
+                    label: platform.label,
+                    selected: _selectedPlatform == platform.keyName,
+                    onTap: () {
+                      setState(() => _selectedPlatform = platform.keyName);
+                    },
+                  ),
+                )
+                .toList(),
           ),
           SizedBox(height: dense ? 10 : 14),
           Column(
@@ -570,7 +720,8 @@ class _WebHomePageState extends State<WebHomePage> {
                       title: action.title,
                       subtitle: action.subtitle,
                       icon: action.icon,
-                      statusLabel: isChinese ? '即将开放' : 'Coming Soon',
+                      statusLabel: action.statusLabel,
+                      onTap: _quickActionBusy ? null : action.onTap,
                       dense: dense,
                     ),
                   ),
@@ -943,25 +1094,147 @@ class _MetricPill extends StatelessWidget {
 }
 
 class _PlatformGhostButton extends StatelessWidget {
-  const _PlatformGhostButton({required this.label});
+  const _PlatformGhostButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.accent.withValues(alpha: 0.16)
+                : AppColors.surfaceAlt.withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? AppColors.accent.withValues(alpha: 0.6)
+                  : AppColors.border,
             ),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color:
+                      selected ? AppColors.textPrimary : AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlatformOption {
+  const _PlatformOption({
+    required this.keyName,
+    required this.label,
+  });
+
+  final String keyName;
+  final String label;
+}
+
+class _SubscriptionQrDialog extends StatelessWidget {
+  const _SubscriptionQrDialog({
+    required this.title,
+    required this.subtitle,
+    required this.closeLabel,
+    required this.link,
+  });
+
+  final String title;
+  final String subtitle;
+  final String closeLabel;
+  final String link;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      key: const Key('web-home-subscription-qr-dialog'),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: GradientCard(
+          borderRadius: 32,
+          padding: const EdgeInsets.all(26),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                      fontSize: 30,
+                    ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 20),
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: QrImageView(
+                    data: link,
+                    size: 220,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                link,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 52,
+                width: double.infinity,
+                child: AnimatedCard(
+                  onTap: () => Navigator.of(context).pop(),
+                  enableBreathing: false,
+                  borderRadius: 18,
+                  hoverScale: 1.01,
+                  padding: EdgeInsets.zero,
+                  child: Center(
+                    child: Text(
+                      closeLabel,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -972,11 +1245,15 @@ class _UsageAction {
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.statusLabel,
+    required this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final String statusLabel;
+  final VoidCallback onTap;
 }
 
 class _UsageActionTile extends StatelessWidget {
@@ -985,6 +1262,7 @@ class _UsageActionTile extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.statusLabel,
+    required this.onTap,
     this.dense = false,
   });
 
@@ -992,18 +1270,18 @@ class _UsageActionTile extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final String statusLabel;
+  final VoidCallback? onTap;
   final bool dense;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedCard(
       width: double.infinity,
       padding: EdgeInsets.all(dense ? 10 : 14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-      ),
+      onTap: onTap,
+      enableBreathing: false,
+      borderRadius: 18,
+      hoverScale: 1.01,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

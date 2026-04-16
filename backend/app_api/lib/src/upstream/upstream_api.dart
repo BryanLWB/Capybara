@@ -54,6 +54,18 @@ abstract class UpstreamApi {
 
   Future<Map<String, dynamic>> fetchUserConfig(UpstreamAuth auth);
 
+  Future<void> updateUserNotifications(
+    UpstreamAuth auth, {
+    required bool remindExpire,
+    required bool remindTraffic,
+  });
+
+  Future<void> changePassword(
+    UpstreamAuth auth, {
+    required String oldPassword,
+    required String newPassword,
+  });
+
   Future<List<Map<String, dynamic>>> fetchPlans(UpstreamAuth auth);
 
   Future<Map<String, dynamic>> fetchUserProfile(UpstreamAuth auth);
@@ -61,6 +73,8 @@ abstract class UpstreamApi {
   Future<Map<String, dynamic>> fetchSubscriptionSummary(UpstreamAuth auth);
 
   Future<String> fetchSubscriptionContent(UpstreamAuth auth, {String? flag});
+
+  Future<void> resetSubscriptionSecurity(UpstreamAuth auth);
 
   Future<List<Map<String, dynamic>>> fetchNotices(UpstreamAuth auth);
 
@@ -71,6 +85,18 @@ abstract class UpstreamApi {
     required int planId,
     required String period,
     String? couponCode,
+  });
+
+  Future<Map<String, dynamic>> validateCoupon(
+    UpstreamAuth auth, {
+    required int planId,
+    required String period,
+    required String couponCode,
+  });
+
+  Future<Map<String, dynamic>> fetchOrderDetail(
+    UpstreamAuth auth, {
+    required String tradeNo,
   });
 
   Future<Map<String, dynamic>> checkoutOrder(
@@ -90,6 +116,17 @@ abstract class UpstreamApi {
   Future<List<Map<String, dynamic>>> fetchInviteRecords(UpstreamAuth auth);
 
   Future<void> generateInviteCode(UpstreamAuth auth);
+
+  Future<void> transferCommissionToBalance(
+    UpstreamAuth auth, {
+    required int amountCents,
+  });
+
+  Future<void> requestCommissionWithdrawal(
+    UpstreamAuth auth, {
+    required String method,
+    required String account,
+  });
 
   Future<Map<String, dynamic>> redeemGiftCard(
     UpstreamAuth auth, {

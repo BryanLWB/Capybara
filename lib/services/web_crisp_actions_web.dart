@@ -1,17 +1,19 @@
-import 'dart:html' as html;
-import 'dart:js_util' as js_util;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 class WebCrispActions {
-  static bool get isAvailable => js_util.hasProperty(html.window, r'$crisp');
+  static bool get isAvailable => globalContext.has(r'$crisp');
 
   static Future<bool> openChat() async {
     if (!isAvailable) return false;
 
     try {
-      final crisp = js_util.getProperty<Object>(html.window, r'$crisp');
-      js_util.callMethod(crisp, 'push', <Object>[
-        <String>['do', 'chat:open'],
-      ]);
+      final crisp = globalContext.getProperty<JSObject>(r'$crisp'.toJS);
+      final command = <Object?>[
+        <Object?>['do', 'chat:open'],
+      ].jsify();
+      if (command == null) return false;
+      crisp.callMethod<JSAny?>('push'.toJS, command);
       return true;
     } catch (_) {
       return false;

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:capybara/models/help_article.dart';
 import 'package:capybara/screens/web_help_page.dart';
+import 'package:capybara/services/app_api.dart';
 
 Widget _desktopHost(Widget child) {
   return MaterialApp(
@@ -99,6 +100,111 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('web-help-article-dialog')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('help page triggers unauthorized callback on category load',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var unauthorizedCalled = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHelpPage(
+          categoriesLoader: (_) async => throw AppApiException(
+            statusCode: 401,
+            message: 'Request failed',
+          ),
+          onUnauthorized: () => unauthorizedCalled = true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+
+    expect(unauthorizedCalled, isTrue);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('help page triggers unauthorized callback on article load',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var unauthorizedCalled = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHelpPage(
+          categoriesLoader: (_) async => <HelpCategory>[
+            HelpCategory(
+              name: '客户端下载',
+              articles: <HelpArticleSummary>[
+                HelpArticleSummary(
+                  id: 9,
+                  category: '客户端下载',
+                  title: 'Windows 客户端',
+                  updatedAt: 1700000000,
+                ),
+              ],
+            ),
+          ],
+          articleLoader: (_, __) async => throw AppApiException(
+            statusCode: 401,
+            message: 'Request failed',
+          ),
+          onUnauthorized: () => unauthorizedCalled = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Windows 客户端'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+
+    expect(unauthorizedCalled, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('help page falls back to Crisp page when widget cannot open',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var fallbackOpened = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHelpPage(
+          categoriesLoader: (_) async => <HelpCategory>[],
+          chatOpener: () async => false,
+          fallbackChatOpener: () async => fallbackOpened = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('web-help-chat-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(fallbackOpened, isTrue);
+    expect(find.textContaining('已尝试打开客服入口'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

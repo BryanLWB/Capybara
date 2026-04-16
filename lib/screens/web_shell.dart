@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/web_shell_section.dart';
 import '../services/api_config.dart';
+import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
 import '../widgets/animated_background.dart';
 import '../widgets/web_crisp_widget.dart';
@@ -11,21 +12,28 @@ import 'web_home_page.dart';
 import 'web_invite_page.dart';
 import 'web_purchase_page.dart';
 
+typedef WebShellLogoutAction = Future<void> Function();
+
 class WebShell extends StatefulWidget {
   const WebShell({
     super.key,
     required this.onLogout,
     this.initialSection = WebShellSection.home,
+    this.purchasePageBuilder,
+    this.logoutAction,
   });
 
   final VoidCallback onLogout;
   final WebShellSection initialSection;
+  final WidgetBuilder? purchasePageBuilder;
+  final WebShellLogoutAction? logoutAction;
 
   @override
   State<WebShell> createState() => _WebShellState();
 }
 
 class _WebShellState extends State<WebShell> {
+  final WebAppFacade _facade = WebAppFacade();
   late WebShellSection _currentSection;
 
   @override
@@ -40,9 +48,16 @@ class _WebShellState extends State<WebShell> {
           );
 
   Future<void> _logout() async {
-    await ApiConfig().clearAuth();
-    if (mounted) {
-      widget.onLogout();
+    try {
+      final logoutAction = widget.logoutAction ?? _facade.logoutCurrentSession;
+      await logoutAction();
+    } catch (_) {
+      // Local logout must proceed even if the server session is already gone.
+    } finally {
+      await ApiConfig().clearAuth();
+      if (mounted) {
+        widget.onLogout();
+      }
     }
   }
 
@@ -218,13 +233,14 @@ class _WebShellState extends State<WebShell> {
           onUnauthorized: widget.onLogout,
         );
       case WebShellSection.purchase:
-        return const WebPurchasePage();
+        return widget.purchasePageBuilder?.call(context) ??
+            const WebPurchasePage();
       case WebShellSection.help:
-        return const WebHelpPage();
+        return WebHelpPage(onUnauthorized: widget.onLogout);
       case WebShellSection.invite:
-        return const WebInvitePage();
+        return WebInvitePage(onUnauthorized: widget.onLogout);
       case WebShellSection.account:
-        return const WebAccountPage();
+        return WebAccountPage(onUnauthorized: widget.onLogout);
     }
   }
 }

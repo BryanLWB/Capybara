@@ -54,14 +54,18 @@ class UpstreamPanelApi implements UpstreamApi {
     String? emailCode,
     String? recaptchaData,
   }) async {
+    final normalizedInviteCode = _trimmedOrNull(inviteCode);
+    final normalizedEmailCode = _trimmedOrNull(emailCode);
+    final normalizedRecaptchaData = _trimmedOrNull(recaptchaData);
     final response = await _post(
       '/api/v1/passport/auth/register',
       body: {
         'email': email,
         'password': password,
-        if (inviteCode?.isNotEmpty == true) 'invite_code': inviteCode,
-        if (emailCode?.isNotEmpty == true) 'email_code': emailCode,
-        if (recaptchaData?.isNotEmpty == true) 'recaptcha_data': recaptchaData,
+        if (normalizedInviteCode != null) 'invite_code': normalizedInviteCode,
+        if (normalizedEmailCode != null) 'email_code': normalizedEmailCode,
+        if (normalizedRecaptchaData != null)
+          'recaptcha_data': normalizedRecaptchaData,
       },
     );
     return _authFromResponse(response);
@@ -118,6 +122,38 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
+  Future<void> updateUserNotifications(
+    UpstreamAuth auth, {
+    required bool remindExpire,
+    required bool remindTraffic,
+  }) async {
+    await _post(
+      '/api/v1/user/update',
+      auth: auth,
+      body: {
+        'remind_expire': remindExpire ? 1 : 0,
+        'remind_traffic': remindTraffic ? 1 : 0,
+      },
+    );
+  }
+
+  @override
+  Future<void> changePassword(
+    UpstreamAuth auth, {
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    await _post(
+      '/api/v1/user/changePassword',
+      auth: auth,
+      body: {
+        'old_password': oldPassword,
+        'new_password': newPassword,
+      },
+    );
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> fetchPlans(UpstreamAuth auth) async {
     final response = await _get('/api/v1/user/plan/fetch', auth: auth);
     final data = response['data'];
@@ -169,6 +205,11 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
+  Future<void> resetSubscriptionSecurity(UpstreamAuth auth) async {
+    await _get('/api/v1/user/resetSecurity', auth: auth);
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> fetchNotices(UpstreamAuth auth) async {
     final response = await _get('/api/v1/user/notice/fetch', auth: auth);
     final data = response['data'];
@@ -217,6 +258,36 @@ class UpstreamPanelApi implements UpstreamApi {
       );
     }
     return tradeNo;
+  }
+
+  @override
+  Future<Map<String, dynamic>> validateCoupon(
+    UpstreamAuth auth, {
+    required int planId,
+    required String period,
+    required String couponCode,
+  }) {
+    return _post(
+      '/api/v1/user/coupon/check',
+      auth: auth,
+      body: {
+        'plan_id': '$planId',
+        'period': period,
+        'code': couponCode,
+      },
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchOrderDetail(
+    UpstreamAuth auth, {
+    required String tradeNo,
+  }) {
+    return _get(
+      '/api/v1/user/order/detail',
+      auth: auth,
+      query: {'trade_no': tradeNo},
+    );
   }
 
   @override
@@ -285,6 +356,34 @@ class UpstreamPanelApi implements UpstreamApi {
   @override
   Future<void> generateInviteCode(UpstreamAuth auth) async {
     await _get('/api/v1/user/invite/save', auth: auth);
+  }
+
+  @override
+  Future<void> transferCommissionToBalance(
+    UpstreamAuth auth, {
+    required int amountCents,
+  }) async {
+    await _post(
+      '/api/v1/user/transfer',
+      auth: auth,
+      body: {'transfer_amount': amountCents},
+    );
+  }
+
+  @override
+  Future<void> requestCommissionWithdrawal(
+    UpstreamAuth auth, {
+    required String method,
+    required String account,
+  }) async {
+    await _post(
+      '/api/v1/user/ticket/withdraw',
+      auth: auth,
+      body: {
+        'withdraw_method': method,
+        'withdraw_account': account,
+      },
+    );
   }
 
   @override
@@ -434,6 +533,12 @@ class UpstreamPanelApi implements UpstreamApi {
       'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Safari/537.36',
     };
+  }
+
+  String? _trimmedOrNull(String? raw) {
+    final value = raw?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   String? _extractMessage(String body) {
