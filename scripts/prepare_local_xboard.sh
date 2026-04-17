@@ -19,6 +19,8 @@ repair_admin_submodule() {
 
 repair_admin_submodule
 
+bash "${ROOT_DIR}/scripts/check_xboard_upstream_update.sh"
+
 docker compose -f "${ROOT_DIR}/docker/xboard-local.compose.yaml" run --rm web \
   composer install --no-dev
 

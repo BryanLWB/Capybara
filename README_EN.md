@@ -155,9 +155,18 @@ bash scripts/prepare_local_xboard.sh
 ```
 
 It will:
+- check whether `upstreams/xboard` is behind upstream `master`
 - repair the nested `public/assets/admin` submodule if an old sync damaged it
 - run `composer install --no-dev`
 - sync the compiled admin assets from the official image into the local overlay directory
+
+If upstream has new commits, the script only prints how many commits your local mirror is behind and points you to:
+
+```bash
+bash scripts/update_local_xboard_upstream.sh
+```
+
+It does not silently auto-upgrade before startup, and it does not auto-apply migrations.
 
 If you prefer the raw commands, run them in this order:
 

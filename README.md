@@ -155,9 +155,18 @@ bash scripts/prepare_local_xboard.sh
 ```
 
 它会自动完成：
+- 检查 `upstreams/xboard` 是否落后于上游 `master`
 - 修复可能被旧同步脚本破坏的 `public/assets/admin` 嵌套子模块
 - 运行 `composer install --no-dev`
 - 把官方镜像里的已编译 admin 静态资源同步到本地 overlay 目录
+
+如果发现上游有新提交，脚本只会提示你当前落后了多少个 commit，并引导你手动执行：
+
+```bash
+bash scripts/update_local_xboard_upstream.sh
+```
+
+它不会在启动前偷偷自动升级，也不会自动执行 migration。
 
 如果你更希望手动执行原始步骤，可以按下面顺序运行：
 
