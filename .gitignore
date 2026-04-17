@@ -115,3 +115,4 @@ local.properties
 .env
 .env.localflux_source.zip
 .local/xboard-admin-assets/
+.local/xboard-backups/

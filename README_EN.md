@@ -167,6 +167,36 @@ docker compose -f docker/xboard-local.compose.yaml run --rm web composer install
 bash scripts/sync_xboard_admin_assets.sh
 ```
 
+If you want to safely update local `upstreams/xboard` to the latest upstream `master` while backing up your local data first, run:
+
+```bash
+bash scripts/update_local_xboard_upstream.sh
+```
+
+The script backs up:
+- `upstreams/xboard/.env`
+- `upstreams/xboard/.docker/.data`
+- `upstreams/xboard/storage/app`
+- the local Redis volume
+
+It then stops the stack, fast-forwards Xboard, refreshes dependencies and admin assets, and starts the services again. By default it does not automatically apply schema changes. If pending migrations exist, it will automatically print:
+- the migration file path
+- which tables are created or altered
+- whether the related tables already contain data
+- the SQL shown by `--pretend`
+
+You can also review pending migrations separately with:
+
+```bash
+bash scripts/review_xboard_pending_migrations.sh
+```
+
+If you intentionally want to apply migrations as part of the update, use:
+
+```bash
+bash scripts/update_local_xboard_upstream.sh --apply-migrations
+```
+
 Admin assets are now injected through a local overlay mount. Do not copy them directly into `upstreams/xboard/public/assets/admin`, or you may break the nested submodule and later Git operations.
 
 Without this preparation, the `/ad1f98d6` admin page will render as a blank screen.

@@ -167,6 +167,36 @@ docker compose -f docker/xboard-local.compose.yaml run --rm web composer install
 bash scripts/sync_xboard_admin_assets.sh
 ```
 
+如果你想安全更新本地 `upstreams/xboard` 到上游最新 `master`，并先备份当前本地数据，再执行：
+
+```bash
+bash scripts/update_local_xboard_upstream.sh
+```
+
+这个脚本会先备份：
+- `upstreams/xboard/.env`
+- `upstreams/xboard/.docker/.data`
+- `upstreams/xboard/storage/app`
+- 本地 Redis volume
+
+然后再停止服务、fast-forward Xboard、重新安装依赖、同步 admin 资源并重启。默认不会自动执行数据库迁移；如果检测到 pending migration，会自动给出：
+- migration 文件路径
+- 这次会创建/修改哪些表
+- 当前相关表是否已有数据
+- `--pretend` 下实际将执行的 SQL
+
+你也可以单独复查：
+
+```bash
+bash scripts/review_xboard_pending_migrations.sh
+```
+
+如果你确认要一起升级 schema，再使用：
+
+```bash
+bash scripts/update_local_xboard_upstream.sh --apply-migrations
+```
+
 现在管理后台资源会通过本地 overlay 注入到容器里，不应再手动把资源复制到 `upstreams/xboard/public/assets/admin` 子模块根目录；否则后续 `git status`、切分支和 rebase 可能损坏。
 
 如果不做这一步，`/ad1f98d6` 管理后台会白屏。
