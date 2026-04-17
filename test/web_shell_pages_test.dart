@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +15,7 @@ import 'package:capybara/screens/web_invite_page.dart';
 import 'package:capybara/screens/web_purchase_page.dart';
 import 'package:capybara/services/api_config.dart';
 import 'package:capybara/services/panel_api.dart';
+import 'package:capybara/services/web_app_facade.dart';
 import 'package:capybara/screens/web_shell.dart';
 import 'package:capybara/widgets/action_button.dart';
 import 'package:capybara/widgets/animated_card.dart';
@@ -176,6 +175,111 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('订单已完成'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web purchase only recovers pending orders for pending conflict',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var recoveryCalled = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          plansLoader: _loadTestPlans,
+          orderCreator: (_, __, ___) async {
+            throw const PendingOrderExistsException();
+          },
+          pendingOrderRecoverer: (plan, period, couponCode) async {
+            recoveryCalled = true;
+            expect(plan.id, 1);
+            expect(period.key, 'month_price');
+            expect(couponCode, isNull);
+            return 'T20260414002';
+          },
+          orderDetailLoader: (orderRef, fallbackPlan) async =>
+              WebOrderDetailData(
+            orderRef: orderRef,
+            stateCode: 0,
+            periodKey: 'month_price',
+            amountTotal: 380,
+            amountPayable: 380,
+            amountDiscount: 0,
+            amountBalance: 0,
+            amountRefund: 0,
+            amountSurplus: 0,
+            amountHandling: 0,
+            createdAt: 1776150000,
+            plan: fallbackPlan,
+          ),
+          paymentMethodsLoader: () async => <WebPaymentMethodData>[
+            WebPaymentMethodData(
+              id: 1,
+              label: '支付宝',
+              provider: 'AlipayF2F',
+              feeFixedCents: 0,
+              feeRate: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(recoveryCalled, isTrue);
+    expect(find.text('订单支付'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web purchase does not recover old orders for generic failures',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var recoveryCalled = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          plansLoader: _loadTestPlans,
+          orderCreator: (_, __, ___) async {
+            throw StateError('coupon failed');
+          },
+          pendingOrderRecoverer: (_, __, ___) async {
+            recoveryCalled = true;
+            return 'T20260414003';
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(recoveryCalled, isFalse);
+    expect(find.text('订单创建失败，请确认套餐、周期和优惠券后重试。'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

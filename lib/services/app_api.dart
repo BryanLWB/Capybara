@@ -9,11 +9,13 @@ class AppApiException implements Exception {
   AppApiException({
     required this.statusCode,
     required this.message,
+    this.code,
     this.body,
   });
 
   final int statusCode;
   final String message;
+  final String? code;
   final String? body;
 
   @override
@@ -418,11 +420,18 @@ class AppApi {
   AppApiException _errorFromResponse(http.Response response) {
     final body = response.body;
     String message = 'Request failed';
+    String? code;
     try {
       final decoded = _decode(body);
       final error = decoded['error'];
-      if (error is Map && error['message'] is String) {
-        message = error['message'] as String;
+      if (error is Map) {
+        if (error['message'] is String) {
+          message = error['message'] as String;
+        }
+        final rawCode = error['code']?.toString().trim();
+        if (rawCode != null && rawCode.isNotEmpty) {
+          code = rawCode;
+        }
       }
     } catch (_) {
       // ignore
@@ -430,6 +439,7 @@ class AppApi {
     return AppApiException(
       statusCode: response.statusCode,
       message: message,
+      code: code,
       body: body.isEmpty ? null : body,
     );
   }

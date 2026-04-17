@@ -4,6 +4,7 @@ services:
     working_dir: /www
     volumes:
       - ../upstreams/xboard:/www
+      - ../.local/xboard-admin-assets:/www/public/assets/admin:ro
       - xboard-redis-data:/data
     environment:
       - docker=true

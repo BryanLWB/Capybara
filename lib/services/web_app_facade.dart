@@ -10,6 +10,10 @@ import 'api_config.dart';
 import 'app_api.dart';
 import 'user_data_service.dart';
 
+class PendingOrderExistsException implements Exception {
+  const PendingOrderExistsException();
+}
+
 class WebAppFacade {
   WebAppFacade({
     AppApi? api,
@@ -185,34 +189,89 @@ class WebAppFacade {
     String periodKey,
     String? couponCode,
   ) async {
-    final response = await _api.createOrder(
-      planId,
-      periodKey,
-      couponCode: couponCode,
-    );
-    final data = Map<String, dynamic>.from(
-      response['data'] as Map? ?? const {},
-    );
-    final orderRef = data['order_ref']?.toString() ?? '';
-    if (orderRef.isEmpty) {
-      throw StateError('order reference missing');
+    try {
+      final response = await _api.createOrder(
+        planId,
+        periodKey,
+        couponCode: couponCode,
+      );
+      final data = Map<String, dynamic>.from(
+        response['data'] as Map? ?? const {},
+      );
+      final orderRef = data['order_ref']?.toString() ?? '';
+      if (orderRef.isEmpty) {
+        throw StateError('order reference missing');
+      }
+      return orderRef;
+    } on AppApiException catch (error) {
+      if (error.code == 'commerce.pending_order_exists') {
+        throw const PendingOrderExistsException();
+      }
+      rethrow;
     }
-    return orderRef;
   }
 
-  Future<String?> loadPendingOrderRef() async {
+  Future<String?> recoverMatchingPendingOrderRef({
+    required WebPlanViewData plan,
+    required WebPlanPeriod period,
+    String? couponCode,
+    DateTime Function()? now,
+  }) async {
+    if (_trimmedOrNull(couponCode) != null) {
+      return null;
+    }
+
     final response = await _api.getOrders();
     final data = Map<String, dynamic>.from(
       response['data'] as Map? ?? const {},
     );
-    final items = data['items'] as List? ?? const [];
-    final pending =
-        items.whereType<Map>().map(Map<String, dynamic>.from).firstWhere(
-              (item) => item['state_code'] == 0,
-              orElse: () => const <String, dynamic>{},
-            );
-    final orderRef = pending['order_ref']?.toString() ?? '';
-    return orderRef.isEmpty ? null : orderRef;
+    final items = (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where(
+          (item) =>
+              _toInt(item['state_code']) == 0 &&
+              (item['order_ref']?.toString().trim().isNotEmpty ?? false),
+        )
+        .toList()
+      ..sort(
+        (left, right) =>
+            _toInt(right['created_at']).compareTo(_toInt(left['created_at'])),
+      );
+
+    if (items.isEmpty) {
+      return null;
+    }
+
+    final latestPending = items.first;
+    final orderRef = latestPending['order_ref']?.toString().trim() ?? '';
+    if (orderRef.isEmpty) {
+      return null;
+    }
+
+    final createdAt = _toInt(latestPending['created_at']);
+    if (createdAt <= 0) {
+      return null;
+    }
+
+    final nowUtc = (now ?? DateTime.now).call().toUtc();
+    final createdAtUtc = DateTime.fromMillisecondsSinceEpoch(
+      createdAt * 1000,
+      isUtc: true,
+    );
+    if (createdAtUtc.isBefore(nowUtc.subtract(const Duration(minutes: 30)))) {
+      return null;
+    }
+
+    final detail = await loadOrderDetail(orderRef, plan);
+    if (detail.stateCode != 0) {
+      return null;
+    }
+    if (detail.plan?.id != plan.id || detail.periodKey != period.key) {
+      return null;
+    }
+
+    return orderRef;
   }
 
   Future<WebOrderDetailData> loadOrderDetail(
@@ -269,4 +328,10 @@ int _toInt(Object? value) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value) ?? 0;
   return 0;
+}
+
+String? _trimmedOrNull(String? raw) {
+  final value = raw?.trim();
+  if (value == null || value.isEmpty) return null;
+  return value;
 }

@@ -575,12 +575,24 @@ class _AppApiService {
     }
     final body = await _jsonBody(request);
     return _withUpstreamGuard(() async {
-      final orderRef = await upstreamApi.createOrder(
-        _toAuth(session),
-        planId: (body['plan_id'] as num?)?.toInt() ?? 0,
-        period: body['period_key']?.toString() ?? '',
-        couponCode: body['coupon_code']?.toString(),
-      );
+      String orderRef;
+      try {
+        orderRef = await upstreamApi.createOrder(
+          _toAuth(session),
+          planId: (body['plan_id'] as num?)?.toInt() ?? 0,
+          period: body['period_key']?.toString() ?? '',
+          couponCode: body['coupon_code']?.toString(),
+        );
+      } on UpstreamException catch (error) {
+        if (await _hasPendingOrderConflict(_toAuth(session), error)) {
+          return _error(
+            'commerce.pending_order_exists',
+            'Request failed',
+            HttpStatus.conflict,
+          );
+        }
+        rethrow;
+      }
       return _ok(<String, dynamic>{
         'order_ref': orderRef,
       });
@@ -762,8 +774,20 @@ class _AppApiService {
         _toAuth(session),
         code: body['code']?.toString() ?? '',
       );
+      final status = result['status']?.toString();
+      final rewardData = result['data'];
+      if (status != 'success' || rewardData is! Map) {
+        return _error(
+          'upstream.failed',
+          'Request failed',
+          HttpStatus.badGateway,
+        );
+      }
       return _ok(<String, dynamic>{
-        'result': _mapReward(result['data'] as Map? ?? const {}),
+        'result': <String, dynamic>{
+          'ok': true,
+          ..._mapReward(rewardData),
+        },
       });
     });
   }
@@ -1097,12 +1121,26 @@ class _AppApiService {
 
   Map<String, dynamic> _mapReward(Map raw) {
     return <String, dynamic>{
-      'ok': true,
       'message': raw['message'] ?? 'ok',
       'rewards': raw['rewards'],
       'referral_rewards': raw['invite_rewards'],
       'label': raw['template_name'],
     };
+  }
+
+  Future<bool> _hasPendingOrderConflict(
+    UpstreamAuth auth,
+    UpstreamException error,
+  ) async {
+    if (error.statusCode != HttpStatus.badRequest) {
+      return false;
+    }
+    try {
+      final orders = await upstreamApi.fetchOrders(auth);
+      return orders.any((item) => _toNum(item['status']).toInt() == 0);
+    } catch (_) {
+      return false;
+    }
   }
 
   Map<String, dynamic> _mapGuestConfig(Map raw) {

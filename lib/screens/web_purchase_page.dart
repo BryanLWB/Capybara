@@ -26,6 +26,11 @@ typedef WebOrderCreator = Future<String> Function(
   String periodKey,
   String? couponCode,
 );
+typedef WebPendingOrderRecoverer = Future<String?> Function(
+  WebPlanViewData plan,
+  WebPlanPeriod period,
+  String? couponCode,
+);
 typedef WebOrderDetailLoader = Future<WebOrderDetailData> Function(
   String orderRef,
   WebPlanViewData? fallbackPlan,
@@ -46,6 +51,7 @@ class WebPurchasePage extends StatefulWidget {
     this.plansLoader,
     this.couponValidator,
     this.orderCreator,
+    this.pendingOrderRecoverer,
     this.orderDetailLoader,
     this.paymentMethodsLoader,
     this.orderCheckout,
@@ -56,6 +62,7 @@ class WebPurchasePage extends StatefulWidget {
   final WebPlansLoader? plansLoader;
   final WebCouponValidator? couponValidator;
   final WebOrderCreator? orderCreator;
+  final WebPendingOrderRecoverer? pendingOrderRecoverer;
   final WebOrderDetailLoader? orderDetailLoader;
   final WebPaymentMethodsLoader? paymentMethodsLoader;
   final WebOrderCheckout? orderCheckout;
@@ -724,6 +731,9 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     final plan = _selectedPlan;
     final period = _selectedPeriod;
     if (plan == null || period == null) return;
+    final couponCode = _couponController.text.trim().isEmpty
+        ? null
+        : _couponController.text.trim();
     setState(() {
       _isBusy = true;
       _message = null;
@@ -733,14 +743,20 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       final tradeNo = await create(
         plan.id,
         period.key,
-        _couponController.text.trim().isEmpty
-            ? null
-            : _couponController.text.trim(),
+        couponCode,
       );
       await _loadCheckoutData(tradeNo, plan);
-    } catch (_) {
-      final recovered = await _recoverPendingOrder(plan);
+    } on PendingOrderExistsException {
+      final recovered = await _recoverPendingOrder(plan, period, couponCode);
       if (!recovered && mounted) {
+        setState(() {
+          _message = _isChinese(context)
+              ? '检测到已有待支付订单，请继续支付已有订单或先取消后重试。'
+              : 'A pending order already exists. Continue that order or cancel it first.';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
         setState(() {
           _message = _isChinese(context)
               ? '订单创建失败，请确认套餐、周期和优惠券后重试。'
@@ -762,15 +778,40 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     return _facade.createOrder(planId, periodKey, couponCode);
   }
 
-  Future<bool> _recoverPendingOrder(WebPlanViewData fallbackPlan) async {
+  Future<bool> _recoverPendingOrder(
+    WebPlanViewData fallbackPlan,
+    WebPlanPeriod selectedPeriod,
+    String? couponCode,
+  ) async {
+    if (couponCode != null && couponCode.trim().isNotEmpty) {
+      return false;
+    }
     try {
-      final orderRef = await _facade.loadPendingOrderRef();
+      final recover =
+          widget.pendingOrderRecoverer ?? _recoverPendingOrderFromApi;
+      final orderRef = await recover(
+        fallbackPlan,
+        selectedPeriod,
+        couponCode,
+      );
       if (orderRef == null) return false;
       await _loadCheckoutData(orderRef, fallbackPlan);
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  Future<String?> _recoverPendingOrderFromApi(
+    WebPlanViewData plan,
+    WebPlanPeriod period,
+    String? couponCode,
+  ) {
+    return _facade.recoverMatchingPendingOrderRef(
+      plan: plan,
+      period: period,
+      couponCode: couponCode,
+    );
   }
 
   Future<void> _loadCheckoutData(

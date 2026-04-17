@@ -10,9 +10,9 @@
 
 Change one API URL → Build → Get Your Branded App
 
-[![Stars](https://img.shields.io/github/stars/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/stargazers)
-[![Forks](https://img.shields.io/github/forks/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/network/members)
-[![License](https://img.shields.io/github/license/your-org/capybara?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/stargazers)
+[![Forks](https://img.shields.io/github/forks/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/network/members)
+[![License](https://img.shields.io/github/license/BryanLWB/flux?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
 💬 Replace with your community link · 📞 Replace with your business contact
@@ -101,8 +101,8 @@ Powered by **SingBox + V2Ray** Dual Core.
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/capybara.git
-cd capybara
+git clone https://github.com/BryanLWB/flux.git
+cd flux
 
 # 2. Install dependencies
 flutter pub get
@@ -148,13 +148,28 @@ The current version uses the in-repo app API layer to hide upstream panel detail
 
 ### Local Split-Dev Notes
 
-If you use the in-repo local Xboard Docker stack with `upstreams/xboard` bind-mounted into the container, sync the bundled admin frontend assets once before opening the admin UI:
+If you use the in-repo local Xboard Docker stack with `upstreams/xboard` bind-mounted into the container, prefer the one-shot preparation script first:
 
 ```bash
+bash scripts/prepare_local_xboard.sh
+```
+
+It will:
+- repair the nested `public/assets/admin` submodule if an old sync damaged it
+- run `composer install --no-dev`
+- sync the compiled admin assets from the official image into the local overlay directory
+
+If you prefer the raw commands, run them in this order:
+
+```bash
+git -C upstreams/xboard submodule update --init --force --checkout public/assets/admin
+docker compose -f docker/xboard-local.compose.yaml run --rm web composer install --no-dev
 bash scripts/sync_xboard_admin_assets.sh
 ```
 
-The official image already contains the compiled admin assets, but the local bind mount hides them. Without syncing them into the local clone first, the `/ad1f98d6` admin page will render as a blank screen.
+Admin assets are now injected through a local overlay mount. Do not copy them directly into `upstreams/xboard/public/assets/admin`, or you may break the nested submodule and later Git operations.
+
+Without this preparation, the `/ad1f98d6` admin page will render as a blank screen.
 
 If you want to open the local web console directly in a normal browser, prefer this stable entry point instead of `flutter run -d web-server`:
 

@@ -10,9 +10,9 @@
 
 改一行 API 地址 → 编译 → 拥有专属品牌 App
 
-[![Stars](https://img.shields.io/github/stars/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/stargazers)
-[![Forks](https://img.shields.io/github/forks/your-org/capybara?style=flat-square&logo=github)](https://github.com/your-org/capybara/network/members)
-[![License](https://img.shields.io/github/license/your-org/capybara?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/stargazers)
+[![Forks](https://img.shields.io/github/forks/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/network/members)
+[![License](https://img.shields.io/github/license/BryanLWB/flux?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
 💬 请替换为你的社区入口 · 📞 请替换为你的商务联系方式
@@ -101,8 +101,8 @@ Capybara 采用 **SingBox + V2Ray** 双核驱动，支持市面主流协议：
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-org/capybara.git
-cd capybara
+git clone https://github.com/BryanLWB/flux.git
+cd flux
 
 # 2. 安装依赖
 flutter pub get
@@ -148,13 +148,28 @@ Capybara 提供了一整套定制化方案，请按以下步骤完成配置。
 
 ### 本地联调补充
 
-如果你使用仓库里的本地 Xboard Docker 编排，并且把 `upstreams/xboard` 挂载进容器，记得先同步一次 Xboard 自带的管理后台静态资源：
+如果你使用仓库里的本地 Xboard Docker 编排，并且把 `upstreams/xboard` 挂载进容器，推荐先执行一键准备脚本：
 
 ```bash
+bash scripts/prepare_local_xboard.sh
+```
+
+它会自动完成：
+- 修复可能被旧同步脚本破坏的 `public/assets/admin` 嵌套子模块
+- 运行 `composer install --no-dev`
+- 把官方镜像里的已编译 admin 静态资源同步到本地 overlay 目录
+
+如果你更希望手动执行原始步骤，可以按下面顺序运行：
+
+```bash
+git -C upstreams/xboard submodule update --init --force --checkout public/assets/admin
+docker compose -f docker/xboard-local.compose.yaml run --rm web composer install --no-dev
 bash scripts/sync_xboard_admin_assets.sh
 ```
 
-原因是官方镜像自带了编译好的 admin 前端资源，但本地 bind mount 会把它们盖掉；不补这一步时，`/ad1f98d6` 管理后台会白屏。
+现在管理后台资源会通过本地 overlay 注入到容器里，不应再手动把资源复制到 `upstreams/xboard/public/assets/admin` 子模块根目录；否则后续 `git status`、切分支和 rebase 可能损坏。
+
+如果不做这一步，`/ad1f98d6` 管理后台会白屏。
 
 如果你想在普通浏览器里直接打开本地 web 端，优先使用下面这个稳定入口，而不是 `flutter run -d web-server`：
 

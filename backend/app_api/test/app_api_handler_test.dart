@@ -642,6 +642,88 @@ void main() {
     expect(upstreamApi.validatedCouponCode, 'SAVE10');
   });
 
+  test('create order maps pending order conflict to stable app error',
+      () async {
+    upstreamApi.createOrderFailure = UpstreamException(
+      statusCode: 400,
+      message:
+          'У вас есть неоплаченный или ожидающий заказ, попробуйте позже или отмените его',
+    );
+    upstreamApi.fetchOrdersResponse = <Map<String, dynamic>>[
+      <String, dynamic>{'status': 0, 'trade_no': '202600000001'},
+    ];
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/commerce/orders'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'plan_id': 8,
+          'period_key': 'month_price',
+        }),
+      ),
+    );
+
+    expect(response.statusCode, 409);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    expect(
+      payload['error'],
+      <String, dynamic>{
+        'code': 'commerce.pending_order_exists',
+        'message': 'Request failed',
+      },
+    );
+  });
+
+  test('create order keeps unrelated upstream failures generic', () async {
+    upstreamApi.createOrderFailure = UpstreamException(
+      statusCode: 400,
+      message: 'Coupon failed',
+    );
+    upstreamApi.fetchOrdersResponse = <Map<String, dynamic>>[];
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/commerce/orders'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'plan_id': 8,
+          'period_key': 'month_price',
+        }),
+      ),
+    );
+
+    expect(response.statusCode, 400);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    expect(
+      payload['error'],
+      <String, dynamic>{
+        'code': 'request.failed',
+        'message': 'Request failed',
+      },
+    );
+  });
+
   test('order detail maps public order fields', () async {
     final session = await sessionStore.create(
       upstreamToken: 'upstream-token',
@@ -717,6 +799,75 @@ void main() {
       containsPair('kind', 'completed'),
     );
   });
+
+  test('gift redeem returns ok only for upstream success payload', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/rewards/redeem'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{'code': 'GIFT-001'}),
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    expect(
+      (payload['data'] as Map<String, dynamic>)['result'],
+      <String, dynamic>{
+        'ok': true,
+        'message': 'ok',
+        'rewards': <String, dynamic>{'amount': 1},
+        'referral_rewards': null,
+        'label': null,
+      },
+    );
+  });
+
+  test('gift redeem rejects malformed 2xx upstream payload', () async {
+    upstreamApi.redeemGiftCardResponse = <String, dynamic>{
+      'status': 'fail',
+      'data': <String, dynamic>{'message': 'bad'},
+    };
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/rewards/redeem'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{'code': 'GIFT-001'}),
+      ),
+    );
+
+    expect(response.statusCode, 502);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    expect(
+      payload['error'],
+      <String, dynamic>{
+        'code': 'upstream.failed',
+        'message': 'Request failed',
+      },
+    );
+  });
 }
 
 class _FakeUpstreamApi implements UpstreamApi {
@@ -739,9 +890,18 @@ class _FakeUpstreamApi implements UpstreamApi {
   String? fetchedSubscriptionFlag;
   String? withdrawalMethod;
   String? withdrawalAccount;
+  Object? createOrderFailure;
+  List<Map<String, dynamic>> fetchOrdersResponse = <Map<String, dynamic>>[];
   Map<String, dynamic> checkoutResult = <String, dynamic>{
     'type': 0,
     'data': true,
+  };
+  Map<String, dynamic> redeemGiftCardResponse = <String, dynamic>{
+    'status': 'success',
+    'data': <String, dynamic>{
+      'message': 'ok',
+      'rewards': <String, dynamic>{'amount': 1},
+    },
   };
 
   Map<String, dynamic> helpArticleCategories = <String, dynamic>{
@@ -798,8 +958,13 @@ class _FakeUpstreamApi implements UpstreamApi {
     required int planId,
     required String period,
     String? couponCode,
-  }) async =>
-      '202600000001';
+  }) async {
+    final failure = createOrderFailure;
+    if (failure is Exception) {
+      throw failure;
+    }
+    return '202600000001';
+  }
 
   @override
   Future<Map<String, dynamic>> validateCoupon(
@@ -950,7 +1115,7 @@ class _FakeUpstreamApi implements UpstreamApi {
 
   @override
   Future<List<Map<String, dynamic>>> fetchOrders(UpstreamAuth auth) async =>
-      <Map<String, dynamic>>[];
+      fetchOrdersResponse;
 
   @override
   Future<List<Map<String, dynamic>>> fetchPaymentMethods(
@@ -1050,12 +1215,7 @@ class _FakeUpstreamApi implements UpstreamApi {
     UpstreamAuth auth, {
     required String code,
   }) async =>
-      <String, dynamic>{
-        'data': <String, dynamic>{
-          'message': 'ok',
-          'rewards': <String, dynamic>{'amount': 1},
-        },
-      };
+      redeemGiftCardResponse;
 
   @override
   Future<void> updateUserNotifications(
