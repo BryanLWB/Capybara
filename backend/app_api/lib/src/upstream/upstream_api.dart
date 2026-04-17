@@ -78,6 +78,10 @@ abstract class UpstreamApi {
 
   Future<List<Map<String, dynamic>>> fetchNotices(UpstreamAuth auth);
 
+  Future<List<Map<String, dynamic>>> fetchServers(UpstreamAuth auth);
+
+  Future<List<Map<String, dynamic>>> fetchTrafficLogs(UpstreamAuth auth);
+
   Future<List<Map<String, dynamic>>> fetchPaymentMethods(UpstreamAuth auth);
 
   Future<String> createOrder(
@@ -126,6 +130,31 @@ abstract class UpstreamApi {
     UpstreamAuth auth, {
     required String method,
     required String account,
+  });
+
+  Future<List<Map<String, dynamic>>> fetchTickets(UpstreamAuth auth);
+
+  Future<Map<String, dynamic>> fetchTicketDetail(
+    UpstreamAuth auth, {
+    required int ticketId,
+  });
+
+  Future<void> createTicket(
+    UpstreamAuth auth, {
+    required String subject,
+    required int level,
+    required String message,
+  });
+
+  Future<void> replyTicket(
+    UpstreamAuth auth, {
+    required int ticketId,
+    required String message,
+  });
+
+  Future<void> closeTicket(
+    UpstreamAuth auth, {
+    required int ticketId,
   });
 
   Future<Map<String, dynamic>> redeemGiftCard(

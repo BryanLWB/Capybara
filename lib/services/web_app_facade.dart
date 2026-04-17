@@ -5,6 +5,7 @@ import '../models/web_client_download.dart';
 import '../models/web_home_view_data.dart';
 import '../models/web_invite_view_data.dart';
 import '../models/web_purchase_view_data.dart';
+import '../models/web_user_center_view_data.dart';
 import '../models/web_withdraw_config.dart';
 import 'api_config.dart';
 import 'app_api.dart';
@@ -162,6 +163,85 @@ class WebAppFacade {
     await _api.requestReferralWithdrawal(method: method, account: account);
   }
 
+  Future<List<WebNodeStatusItemData>> loadNodeStatuses() async {
+    final response = await _api.getNodeStatuses();
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    return (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => WebNodeStatusItemData.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.nodeId > 0)
+        .toList();
+  }
+
+  Future<List<WebTicketListItemData>> loadTickets() async {
+    final response = await _api.getTickets();
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    return (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => WebTicketListItemData.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.ticketId > 0)
+        .toList()
+      ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+  }
+
+  Future<WebTicketDetailData> loadTicketDetail(int ticketId) async {
+    final response = await _api.getTicketDetail(ticketId);
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    return WebTicketDetailData.fromJson(
+      Map<String, dynamic>.from(data['ticket'] as Map? ?? const {}),
+    );
+  }
+
+  Future<void> createTicket({
+    required String subject,
+    required int priorityLevel,
+    required String message,
+  }) async {
+    await _api.createTicket(
+      subject: subject,
+      priorityLevel: priorityLevel,
+      message: message,
+    );
+  }
+
+  Future<void> replyTicket({
+    required int ticketId,
+    required String message,
+  }) async {
+    await _api.replyTicket(
+      ticketId: ticketId,
+      message: message,
+    );
+  }
+
+  Future<void> closeTicket(int ticketId) async {
+    await _api.closeTicket(ticketId);
+  }
+
+  Future<List<WebTrafficLogItemData>> loadTrafficLogs() async {
+    final response = await _api.getTrafficLogs();
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    return (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => WebTrafficLogItemData.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .toList()
+      ..sort((left, right) => right.recordedAt.compareTo(left.recordedAt));
+  }
+
   Future<List<WebPlanViewData>> loadPlans() async {
     final response = await _api.getPlans();
     final data = Map<String, dynamic>.from(
@@ -174,6 +254,22 @@ class WebAppFacade {
             ))
         .where((plan) => plan.canBuy)
         .toList();
+  }
+
+  Future<List<WebOrderListItemData>> loadOrders() async {
+    final response = await _api.getOrders();
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    final items = (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => WebOrderListItemData.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.orderRef.isNotEmpty)
+        .toList()
+      ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+    return items;
   }
 
   Future<void> validateCoupon(
@@ -312,6 +408,10 @@ class WebAppFacade {
       data['action'] as Map? ?? const {},
     );
     return WebCheckoutActionData.fromJson(action);
+  }
+
+  Future<void> cancelOrder(String orderRef) async {
+    await _api.cancelOrder(orderRef);
   }
 
   Future<int> loadOrderStatus(String orderRef) async {

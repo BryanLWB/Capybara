@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,8 @@ import 'package:capybara/models/help_article.dart';
 import 'package:capybara/models/web_shell_section.dart';
 import 'package:capybara/models/web_invite_view_data.dart';
 import 'package:capybara/models/web_purchase_view_data.dart';
+import 'package:capybara/models/web_user_center_view_data.dart';
+import 'package:capybara/models/web_user_subpage.dart';
 import 'package:capybara/models/web_withdraw_config.dart';
 import 'package:capybara/screens/web_account_page.dart';
 import 'package:capybara/screens/web_auth_page.dart';
@@ -79,6 +82,7 @@ void main() {
     expect(find.text('选择更适合你的套餐'), findsOneWidget);
     expect(find.text('全部套餐'), findsOneWidget);
     expect(find.text('立即购买'), findsWidgets);
+    expect(find.text('我的订单'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -279,7 +283,48 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(recoveryCalled, isFalse);
-    expect(find.text('订单创建失败，请确认套餐、周期和优惠券后重试。'), findsOneWidget);
+    expect(find.text('暂时无法完成操作，请稍后再试。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web purchase pending order banner opens user orders callback',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var openedUserOrders = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          plansLoader: _loadTestPlans,
+          onOpenUserOrders: () => openedUserOrders = true,
+          orderCreator: (_, __, ___) async {
+            throw const PendingOrderExistsException();
+          },
+          pendingOrderRecoverer: (_, __, ___) async => null,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('查看我的订单'), findsOneWidget);
+    await tester.tap(find.text('查看我的订单'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(openedUserOrders, isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -318,7 +363,7 @@ void main() {
         ),
       ),
     );
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));
 
     expect(find.text('帮助中心与知识库'), findsOneWidget);
@@ -654,7 +699,10 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
 
-    await tester.tap(find.byType(Switch).first);
+    final reminderSwitchFinder = find.byType(Switch).evaluate().isNotEmpty
+        ? find.byType(Switch).first
+        : find.byType(CupertinoSwitch).first;
+    await tester.tap(reminderSwitchFinder);
     await tester.pump(const Duration(milliseconds: 400));
     expect(updatedExpiry, isTrue);
     expect(updatedTraffic, isTrue);
@@ -685,6 +733,109 @@ void main() {
     await tester.tap(find.text('确认重置'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(resetCalled, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web account user center switches through orders nodes tickets and traffic',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 2000);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var openedOrderRef = '';
+    await tester.pumpWidget(
+      _desktopHost(
+        WebAccountPage(
+          initialSubpage: WebUserSubpage.orders,
+          profileLoader: () async => <String, dynamic>{
+            'data': <String, dynamic>{
+              'account': <String, dynamic>{
+                'balance_amount': 456,
+                'remind_expire': false,
+                'remind_traffic': true,
+              },
+            },
+          },
+          ordersLoader: () async => <WebOrderListItemData>[
+            WebOrderListItemData(
+              orderRef: 'T20260417001',
+              stateCode: 0,
+              periodKey: 'month_price',
+              amountTotal: 380,
+              createdAt: 1776150000,
+              updatedAt: 1776150300,
+              plan: (await _loadTestPlans()).first,
+            ),
+          ],
+          nodeStatusesLoader: () async => const <WebNodeStatusItemData>[
+            WebNodeStatusItemData(
+              nodeId: 1,
+              displayName: '东京节点',
+              protocolType: 'vmess',
+              version: 'v2ray',
+              rate: 1.0,
+              tags: <String>['日本', '流媒体'],
+              isOnline: true,
+              lastCheckAt: 1776150300,
+            ),
+          ],
+          ticketsLoader: () async => const <WebTicketListItemData>[
+            WebTicketListItemData(
+              ticketId: 8,
+              subject: '无法连接',
+              priorityLevel: 1,
+              replyState: 0,
+              stateCode: 0,
+              createdAt: 1776150000,
+              updatedAt: 1776150300,
+            ),
+          ],
+          trafficLogsLoader: () async => const <WebTrafficLogItemData>[
+            WebTrafficLogItemData(
+              uploadedAmount: 1024,
+              downloadedAmount: 2048,
+              chargedAmount: 4096,
+              rateMultiplier: 1.5,
+              recordedAt: 1776150300,
+            ),
+          ],
+          onOpenOrderCheckout: (orderRef, _) async {
+            openedOrderRef = orderRef;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('用户中心'), findsOneWidget);
+    expect(find.text('个人中心'), findsWidgets);
+    expect(find.text('我的订单'), findsOneWidget);
+    expect(find.text('节点状态'), findsOneWidget);
+    expect(find.text('我的工单'), findsOneWidget);
+    expect(find.text('流量明细'), findsOneWidget);
+
+    expect(find.text('继续支付'), findsOneWidget);
+    await tester.tap(find.text('继续支付'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(openedOrderRef, 'T20260417001');
+
+    await tester.tap(find.byKey(const Key('web-user-subpage-nodes')));
+    await tester.pumpAndSettle();
+    expect(find.text('东京节点'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('web-user-subpage-tickets')));
+    await tester.pumpAndSettle();
+    expect(find.text('无法连接'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('web-user-subpage-traffic')));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('4.00 KB', findRichText: true),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -726,7 +877,134 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('web shell keeps purchase and account pages top aligned',
+  testWidgets('web auth clears verify message when returning to login',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1200);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final api = _FakePanelApi()..sendEmailCodeHandler = () async {};
+    await tester.pumpWidget(
+      _desktopHost(
+        WebAuthPage(
+          api: api,
+          onAuthed: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('忘记密码？'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.enterText(find.byType(TextField).first, 'user@example.com');
+    await tester.tap(find.text('获取验证码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('验证码已发送，请留意邮箱'), findsOneWidget);
+
+    await tester.tap(find.text('返回登录'));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('验证码已发送，请留意邮箱'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web auth submits login on enter and shows customer message',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1200);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final api = _FakePanelApi()
+      ..loginHandler = () async => throw PanelApiException(
+            statusCode: 401,
+            message: 'Request failed',
+            code: 'auth.invalid',
+          );
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebAuthPage(
+          api: api,
+          onAuthed: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'wrong-password');
+    await tester.tap(find.byType(TextField).at(1));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(api.loginCalls, 1);
+    expect(find.text('邮箱或密码不正确，请重新输入。'), findsOneWidget);
+    expect(find.text('Request failed'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web auth submits register and reset on enter',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1200);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final api = _FakePanelApi();
+    await tester.pumpWidget(
+      _desktopHost(
+        WebAuthPage(
+          api: api,
+          onAuthed: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即注册'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.enterText(find.byType(TextField).at(0), 'new@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'INVITE');
+    await tester.enterText(find.byType(TextField).at(2), '123456');
+    await tester.enterText(find.byType(TextField).at(3), 'password123');
+    await tester.tap(find.byType(TextField).at(3));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(api.registerCalls, 1);
+
+    await tester.tap(find.text('返回登录'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.text('忘记密码？'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextField).at(1), '654321');
+    await tester.enterText(find.byType(TextField).at(2), 'new-password');
+    await tester.tap(find.byType(TextField).at(2));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(api.resetCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web shell keeps purchase and user center pages top aligned',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 1800);
@@ -761,10 +1039,11 @@ void main() {
     expect(purchaseHeroTop.dy, lessThan(180));
 
     await pumpShell(WebShellSection.account);
-    final balanceTop = tester.getTopLeft(
-      find.byKey(const Key('web-account-balance-card')),
+    final accountHeroTop = tester.getTopLeft(
+      find.byKey(const Key('web-page-hero')),
     );
-    expect(balanceTop.dy, lessThan(180));
+    expect(accountHeroTop.dy, lessThan(180));
+    expect(find.text('用户中心'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -818,6 +1097,20 @@ void main() {
 
 class _FakePanelApi extends PanelApi {
   String? inviteCode;
+  int loginCalls = 0;
+  int registerCalls = 0;
+  int resetCalls = 0;
+  Future<Map<String, dynamic>> Function()? loginHandler;
+  Future<void> Function()? sendEmailCodeHandler;
+
+  @override
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    loginCalls += 1;
+    if (loginHandler != null) {
+      return loginHandler!();
+    }
+    return <String, dynamic>{'data': const <String, dynamic>{}};
+  }
 
   @override
   Future<Map<String, dynamic>> register(
@@ -827,7 +1120,29 @@ class _FakePanelApi extends PanelApi {
     String? emailCode,
     String? recaptchaData,
   }) async {
+    registerCalls += 1;
     this.inviteCode = inviteCode;
     return <String, dynamic>{'data': const <String, dynamic>{}};
+  }
+
+  @override
+  Future<Map<String, dynamic>> forgetPassword(
+    String email,
+    String emailCode,
+    String password,
+  ) async {
+    resetCalls += 1;
+    return <String, dynamic>{'data': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> sendEmailVerify(
+    String email, {
+    String? recaptchaData,
+  }) async {
+    if (sendEmailCodeHandler != null) {
+      await sendEmailCodeHandler!();
+    }
+    return <String, dynamic>{'data': true};
   }
 }

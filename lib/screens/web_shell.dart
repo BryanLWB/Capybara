@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../models/web_purchase_view_data.dart';
 import '../models/web_shell_section.dart';
+import '../models/web_user_subpage.dart';
 import '../services/api_config.dart';
 import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
@@ -35,6 +37,10 @@ class WebShell extends StatefulWidget {
 class _WebShellState extends State<WebShell> {
   final WebAppFacade _facade = WebAppFacade();
   late WebShellSection _currentSection;
+  WebUserSubpage _currentUserSubpage = WebUserSubpage.profile;
+  String? _purchaseInitialOrderRef;
+  WebPlanViewData? _purchaseInitialFallbackPlan;
+  int _purchaseViewSeed = 0;
 
   @override
   void initState() {
@@ -59,6 +65,42 @@ class _WebShellState extends State<WebShell> {
         widget.onLogout();
       }
     }
+  }
+
+  void _openSection(
+    WebShellSection section, {
+    WebUserSubpage? userSubpage,
+  }) {
+    setState(() {
+      _currentSection = section;
+      if (section == WebShellSection.account) {
+        _currentUserSubpage = userSubpage ?? WebUserSubpage.profile;
+      }
+      if (section == WebShellSection.purchase) {
+        _purchaseInitialOrderRef = null;
+        _purchaseInitialFallbackPlan = null;
+        _purchaseViewSeed++;
+      }
+    });
+  }
+
+  Future<void> _openPurchaseOrder(
+    String orderRef,
+    WebPlanViewData? fallbackPlan,
+  ) async {
+    setState(() {
+      _currentSection = WebShellSection.purchase;
+      _purchaseInitialOrderRef = orderRef;
+      _purchaseInitialFallbackPlan = fallbackPlan;
+      _purchaseViewSeed++;
+    });
+  }
+
+  void _openUserOrders() {
+    setState(() {
+      _currentSection = WebShellSection.account;
+      _currentUserSubpage = WebUserSubpage.orders;
+    });
   }
 
   @override
@@ -158,7 +200,7 @@ class _WebShellState extends State<WebShell> {
         ),
         const SizedBox(height: 4),
         Text(
-          isChinese ? '网页控制台' : 'Web Console',
+          isChinese ? '会员中心' : 'Member Center',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
         ),
       ],
@@ -172,9 +214,9 @@ class _WebShellState extends State<WebShell> {
         final isSelected = _currentSection == section;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: InkWell(
+            child: InkWell(
             borderRadius: BorderRadius.circular(16),
-            onTap: () => setState(() => _currentSection = section),
+            onTap: () => _openSection(section),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -228,19 +270,33 @@ class _WebShellState extends State<WebShell> {
       case WebShellSection.home:
         return WebHomePage(
           onNavigate: (section) {
-            setState(() => _currentSection = section);
+            _openSection(section);
           },
           onUnauthorized: widget.onLogout,
         );
       case WebShellSection.purchase:
-        return widget.purchasePageBuilder?.call(context) ??
-            const WebPurchasePage();
+        if (widget.purchasePageBuilder != null &&
+            _purchaseInitialOrderRef == null) {
+          return widget.purchasePageBuilder!.call(context);
+        }
+          return WebPurchasePage(
+            key: ValueKey(
+              'web-purchase-$_purchaseViewSeed-${_purchaseInitialOrderRef ?? 'catalog'}',
+            ),
+          initialOrderRef: _purchaseInitialOrderRef,
+          initialFallbackPlan: _purchaseInitialFallbackPlan,
+          onOpenUserOrders: _openUserOrders,
+        );
       case WebShellSection.help:
         return WebHelpPage(onUnauthorized: widget.onLogout);
       case WebShellSection.invite:
         return WebInvitePage(onUnauthorized: widget.onLogout);
       case WebShellSection.account:
-        return WebAccountPage(onUnauthorized: widget.onLogout);
+        return WebAccountPage(
+          initialSubpage: _currentUserSubpage,
+          onOpenOrderCheckout: _openPurchaseOrder,
+          onUnauthorized: widget.onLogout,
+        );
     }
   }
 }

@@ -29,7 +29,7 @@ extension WebShellSectionX on WebShellSection {
       case WebShellSection.invite:
         return isChinese ? '邀请' : 'Invite';
       case WebShellSection.account:
-        return isChinese ? '账号' : 'Account';
+        return isChinese ? '用户' : 'User';
     }
   }
 }

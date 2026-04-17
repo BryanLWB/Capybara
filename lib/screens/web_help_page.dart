@@ -12,6 +12,7 @@ import '../services/web_app_facade.dart';
 import '../services/web_crisp_actions.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
+import '../utils/web_error_text.dart';
 import '../widgets/action_button.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
@@ -69,8 +70,7 @@ class _WebHelpPageState extends State<WebHelpPage> {
             'zh',
           );
 
-  String _languageTag(BuildContext context) =>
-      _isChinese(context) ? 'zh-CN' : 'en-US';
+  String _languageTag(BuildContext context) => 'zh-CN';
 
   Future<List<HelpCategory>> _loadCategories(String language) async {
     if (widget.categoriesLoader != null) {
@@ -101,8 +101,8 @@ class _WebHelpPageState extends State<WebHelpPage> {
       SnackBar(
         content: Text(
           isChinese
-              ? '已尝试打开客服入口；如果右下角浮窗未展开，会回退到 Crisp 页面。'
-              : 'Tried to open the support widget. It falls back to the Crisp page if needed.',
+              ? '已为你尝试打开在线客服；如果浮窗没有展开，会自动切换到客服页面。'
+              : 'We tried to open live support. If the chat widget does not expand, a support page will open instead.',
         ),
       ),
     );
@@ -156,7 +156,11 @@ class _WebHelpPageState extends State<WebHelpPage> {
           }
           return _HelpErrorState(
             isChinese: isChinese,
-            message: '$error',
+            message: webErrorText(
+              error ?? StateError('help.load.failed'),
+              isChinese: isChinese,
+              context: WebErrorContext.pageLoad,
+            ),
             onReload: () {
               setState(() {
                 _future = _loadCategories(_language ?? _languageTag(context));
@@ -179,8 +183,8 @@ class _WebHelpPageState extends State<WebHelpPage> {
                 title:
                     isChinese ? '帮助中心与知识库' : 'Support Center & Knowledge Base',
                 subtitle: isChinese
-                    ? '所有教程与客户端下载入口都会统一收口到知识库文章里。需要人工支持时，直接使用在线聊天。'
-                    : 'Tutorials and client download entries are unified into knowledge articles. Use live chat whenever you need direct support.',
+                    ? '在这里查看使用说明、常见问题和客户端下载信息。需要人工协助时，可直接联系在线客服。'
+                    : 'Find guides, FAQs, and client download information here. Contact support anytime if you need direct help.',
                 child: ActionButton(
                   key: const Key('web-help-chat-button'),
                   icon: Icons.chat_bubble_outline_rounded,
@@ -351,8 +355,8 @@ class _HelpEmptyState extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             isChinese
-                ? '当前知识库还没有已发布文章。你可以先使用上方在线聊天，后续发布的文章会自动显示在这里。'
-                : 'The knowledge base is currently empty. Use live chat for now, and published articles will appear here automatically.',
+                ? '当前还没有可阅读的帮助文章。你可以先使用上方在线客服，我们会持续补充更多内容。'
+                : 'There are no help articles available yet. You can contact support from the button above while we keep adding more content.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textPrimary,
                   height: 1.55,
@@ -468,7 +472,14 @@ class _HelpArticleDialogState extends State<_HelpArticleDialog> {
                   widget.onUnauthorized();
                   return const Center(child: CapybaraLoader());
                 }
-                return _buildDialogError(context, '${snapshot.error}');
+                return _buildDialogError(
+                  context,
+                  webErrorText(
+                    error ?? StateError('help.article.failed'),
+                    isChinese: widget.isChinese,
+                    context: WebErrorContext.pageLoad,
+                  ),
+                );
               }
 
               if (!snapshot.hasData) {

@@ -124,12 +124,14 @@ class _AppApiService {
         '/api/app/v1/account/subscription/reset', _resetSubscriptionSecurity);
     _router.post('/api/app/v1/account/subscription/access-link',
         _createSubscriptionAccessLink);
+    _router.get('/api/app/v1/account/traffic-logs', _trafficLogs);
     _router.get('/api/app/v1/client/subscription/<accessId>',
         _subscriptionContentByAccess);
     _router.get('/api/app/v1/content/notices', _notices);
     _router.get('/api/app/v1/content/help/articles', _helpArticles);
     _router.get('/api/app/v1/content/help/articles/<articleId>', _helpArticle);
 
+    _router.get('/api/app/v1/client/nodes/status', _nodeStatuses);
     _router.get('/api/app/v1/commerce/payment-methods', _paymentMethods);
     _router.post('/api/app/v1/commerce/coupons/validate', _validateCoupon);
     _router.get('/api/app/v1/commerce/orders', _orders);
@@ -146,6 +148,12 @@ class _AppApiService {
     _router.post(
         '/api/app/v1/referrals/transfer-to-balance', _transferInviteBalance);
     _router.post('/api/app/v1/referrals/withdrawals', _requestWithdrawal);
+
+    _router.get('/api/app/v1/support/tickets', _tickets);
+    _router.get('/api/app/v1/support/tickets/<ticketId>', _ticketDetail);
+    _router.post('/api/app/v1/support/tickets', _createTicket);
+    _router.post('/api/app/v1/support/tickets/<ticketId>/reply', _replyTicket);
+    _router.post('/api/app/v1/support/tickets/<ticketId>/close', _closeTicket);
 
     _router.post('/api/app/v1/rewards/redeem', _redeemGift);
 
@@ -179,7 +187,7 @@ class _AppApiService {
         },
         'account': _mapAccount(profile['data'] as Map? ?? const {}),
       });
-    });
+    }, operation: 'auth.login');
   }
 
   Future<Response> _register(Request request) async {
@@ -304,8 +312,8 @@ class _AppApiService {
       final auth = _toAuth(session);
       await upstreamApi.updateUserNotifications(
         auth,
-        remindExpire: _toBool(body['expiry']),
-        remindTraffic: _toBool(body['traffic']),
+        remindExpire: _toBool(body['expiry'] ?? body['remind_expire']),
+        remindTraffic: _toBool(body['traffic'] ?? body['remind_traffic']),
       );
       final profile = await upstreamApi.fetchUserProfile(auth);
       return _ok(<String, dynamic>{
@@ -384,6 +392,14 @@ class _AppApiService {
     }
     return _withUpstreamGuard(() async {
       final auth = _toAuth(session);
+      final summary = await upstreamApi.fetchSubscriptionSummary(auth);
+      if (!_hasUsableSubscription(summary['data'])) {
+        return _error(
+          'subscription.required',
+          'Request failed',
+          HttpStatus.badRequest,
+        );
+      }
       await upstreamApi.resetSubscriptionSecurity(auth);
       final access = await sessionStore.createSubscriptionAccess(
         upstreamToken: session.upstreamToken,
@@ -407,18 +423,28 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     final body = await _jsonBody(request);
-    final flag = _trimmedOrNull(body['flag']);
-    final access = await sessionStore.createSubscriptionAccess(
-      upstreamToken: session.upstreamToken,
-      upstreamAuth: session.upstreamAuth,
-      flag: flag,
-      ttl: _subscriptionAccessTtl,
-    );
-    return _ok(<String, dynamic>{
-      'subscription': <String, dynamic>{
-        'access_url': _subscriptionAccessUrl(request, access.id),
-        'expires_at': access.expiresAt.toIso8601String(),
-      },
+    return _withUpstreamGuard(() async {
+      final summary = await upstreamApi.fetchSubscriptionSummary(_toAuth(session));
+      if (!_hasUsableSubscription(summary['data'])) {
+        return _error(
+          'subscription.required',
+          'Request failed',
+          HttpStatus.badRequest,
+        );
+      }
+      final flag = _trimmedOrNull(body['flag']);
+      final access = await sessionStore.createSubscriptionAccess(
+        upstreamToken: session.upstreamToken,
+        upstreamAuth: session.upstreamAuth,
+        flag: flag,
+        ttl: _subscriptionAccessTtl,
+      );
+      return _ok(<String, dynamic>{
+        'subscription': <String, dynamic>{
+          'access_url': _subscriptionAccessUrl(request, access.id),
+          'expires_at': access.expiresAt.toIso8601String(),
+        },
+      });
     });
   }
 
@@ -428,10 +454,10 @@ class _AppApiService {
   ) async {
     final record = await sessionStore.readSubscriptionAccess(accessId.trim());
     if (record == null) {
-      return Response(
+      return _error(
+        'subscription.unavailable',
+        'Request failed',
         HttpStatus.notFound,
-        body: '',
-        headers: <String, String>{'content-type': 'text/plain; charset=utf-8'},
       );
     }
     try {
@@ -465,6 +491,20 @@ class _AppApiService {
       final notices = await upstreamApi.fetchNotices(_toAuth(session));
       return _ok(<String, dynamic>{
         'items': notices.map(_mapNotice).toList(),
+      });
+    });
+  }
+
+  Future<Response> _trafficLogs(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final logs = await upstreamApi.fetchTrafficLogs(_toAuth(session));
+      return _ok(<String, dynamic>{
+        'items': logs.map(_mapTrafficLog).toList(),
       });
     });
   }
@@ -508,6 +548,20 @@ class _AppApiService {
       );
       return _ok(<String, dynamic>{
         'article': _mapHelpArticleDetail(article['data'] as Map? ?? const {}),
+      });
+    });
+  }
+
+  Future<Response> _nodeStatuses(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final nodes = await upstreamApi.fetchServers(_toAuth(session));
+      return _ok(<String, dynamic>{
+        'items': nodes.map(_mapNodeStatus).toList(),
       });
     });
   }
@@ -564,7 +618,7 @@ class _AppApiService {
         'valid': true,
         'coupon': _mapCoupon(coupon['data'] as Map? ?? const {}),
       });
-    });
+    }, operation: 'commerce.coupon');
   }
 
   Future<Response> _createOrder(Request request) async {
@@ -584,7 +638,12 @@ class _AppApiService {
           couponCode: body['coupon_code']?.toString(),
         );
       } on UpstreamException catch (error) {
-        if (await _hasPendingOrderConflict(_toAuth(session), error)) {
+        if (await _hasPendingOrderConflict(
+          _toAuth(session),
+          error,
+          planId: (body['plan_id'] as num?)?.toInt() ?? 0,
+          periodKey: body['period_key']?.toString(),
+        )) {
           return _error(
             'commerce.pending_order_exists',
             'Request failed',
@@ -636,7 +695,7 @@ class _AppApiService {
       return _ok(<String, dynamic>{
         'action': _mapCheckoutAction(result),
       });
-    });
+    }, operation: 'commerce.checkout');
   }
 
   Future<Response> _orderStatus(Request request, String orderId) async {
@@ -715,7 +774,11 @@ class _AppApiService {
     final body = await _jsonBody(request);
     final amountCents = _toNum(body['amount_cents']).toInt();
     if (amountCents <= 0) {
-      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+      return _error(
+        'referrals.no_withdrawable_commission',
+        'Request failed',
+        HttpStatus.badRequest,
+      );
     }
     return _withUpstreamGuard(() async {
       final auth = _toAuth(session);
@@ -737,7 +800,7 @@ class _AppApiService {
           'metrics': _mapInviteMetrics(overview['stat']),
         },
       });
-    });
+    }, operation: 'referrals.transfer');
   }
 
   Future<Response> _requestWithdrawal(Request request) async {
@@ -759,7 +822,107 @@ class _AppApiService {
         account: account,
       );
       return _ok(<String, dynamic>{'created': true});
+    }, operation: 'referrals.withdrawal');
+  }
+
+  Future<Response> _tickets(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final tickets = await upstreamApi.fetchTickets(_toAuth(session));
+      return _ok(<String, dynamic>{
+        'items': tickets.map(_mapTicket).toList(),
+      });
     });
+  }
+
+  Future<Response> _ticketDetail(Request request, String ticketId) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final parsedId = int.tryParse(ticketId.trim());
+    if (parsedId == null || parsedId <= 0) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      final ticket = await upstreamApi.fetchTicketDetail(
+        _toAuth(session),
+        ticketId: parsedId,
+      );
+      return _ok(<String, dynamic>{
+        'ticket': _mapTicketDetail(ticket),
+      });
+    }, operation: 'support.ticket.detail');
+  }
+
+  Future<Response> _createTicket(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final body = await _jsonBody(request);
+    final subject = _trimmedOrNull(body['subject']);
+    final message = _trimmedOrNull(body['message']);
+    final level = _toNum(body['priority_level'] ?? body['level']).toInt();
+    if (subject == null || message == null || level < 0) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      await upstreamApi.createTicket(
+        _toAuth(session),
+        subject: subject,
+        level: level,
+        message: message,
+      );
+      return _ok(<String, dynamic>{'created': true});
+    }, operation: 'support.ticket.create');
+  }
+
+  Future<Response> _replyTicket(Request request, String ticketId) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final parsedId = int.tryParse(ticketId.trim());
+    final body = await _jsonBody(request);
+    final message = _trimmedOrNull(body['message']);
+    if (parsedId == null || parsedId <= 0 || message == null) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      await upstreamApi.replyTicket(
+        _toAuth(session),
+        ticketId: parsedId,
+        message: message,
+      );
+      return _ok(<String, dynamic>{'replied': true});
+    }, operation: 'support.ticket.reply');
+  }
+
+  Future<Response> _closeTicket(Request request, String ticketId) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    final parsedId = int.tryParse(ticketId.trim());
+    if (parsedId == null || parsedId <= 0) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      await upstreamApi.closeTicket(
+        _toAuth(session),
+        ticketId: parsedId,
+      );
+      return _ok(<String, dynamic>{'closed': true});
+    }, operation: 'support.ticket.close');
   }
 
   Future<Response> _redeemGift(Request request) async {
@@ -778,9 +941,9 @@ class _AppApiService {
       final rewardData = result['data'];
       if (status != 'success' || rewardData is! Map) {
         return _error(
-          'upstream.failed',
+          'rewards.redeem_failed',
           'Request failed',
-          HttpStatus.badGateway,
+          HttpStatus.badRequest,
         );
       }
       return _ok(<String, dynamic>{
@@ -789,7 +952,7 @@ class _AppApiService {
           ..._mapReward(rewardData),
         },
       });
-    });
+    }, operation: 'rewards.redeem');
   }
 
   Future<Response> _clientConfig(Request request) async {
@@ -837,7 +1000,9 @@ class _AppApiService {
   }
 
   Future<Response> _withUpstreamGuard(
-      Future<Response> Function() action) async {
+    Future<Response> Function() action, {
+    String? operation,
+  }) async {
     try {
       return await action();
     } on UpstreamException catch (error) {
@@ -848,7 +1013,11 @@ class _AppApiService {
         >= 500 => HttpStatus.badGateway,
         _ => HttpStatus.badRequest,
       };
-      return _error(_codeForStatus(status), _safeMessage(status), status);
+      return _error(
+        _codeForUpstreamError(error, status, operation),
+        _safeMessage(status),
+        status,
+      );
     } on FormatException catch (error) {
       _logger.warning('invalid json request: $error');
       return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
@@ -964,6 +1133,22 @@ class _AppApiService {
     };
   }
 
+  Map<String, dynamic> _mapNodeStatus(Map<String, dynamic> raw) {
+    return <String, dynamic>{
+      'node_id': _toNum(raw['id']).toInt(),
+      'display_name': raw['name']?.toString() ?? '',
+      'protocol_type': raw['type']?.toString() ?? '',
+      'version': raw['version']?.toString() ?? '',
+      'rate': _toNum(raw['rate']).toDouble(),
+      'tags': (raw['tags'] as List? ?? const [])
+          .map((item) => item?.toString() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList(),
+      'is_online': _toBool(raw['is_online']),
+      'last_check_at': _toNum(raw['last_check_at']).toInt(),
+    };
+  }
+
   List<Map<String, dynamic>> _mapHelpCategories(Object? raw) {
     if (raw is! Map) return const <Map<String, dynamic>>[];
 
@@ -1033,6 +1218,7 @@ class _AppApiService {
     return <String, dynamic>{
       'order_ref': raw['trade_no'] ?? '',
       'state_code': raw['status'] ?? 0,
+      'period_key': raw['period'] ?? '',
       'amount_total': raw['total_amount'] ?? 0,
       'created_at': raw['created_at'] ?? 0,
       'updated_at': raw['updated_at'] ?? 0,
@@ -1119,6 +1305,56 @@ class _AppApiService {
     };
   }
 
+  Map<String, dynamic> _mapTicket(Map<String, dynamic> raw) {
+    return <String, dynamic>{
+      'ticket_id': _toNum(raw['id']).toInt(),
+      'subject': raw['subject']?.toString() ?? '',
+      'priority_level': _toNum(raw['level']).toInt(),
+      'reply_state': _toNum(raw['reply_status']).toInt(),
+      'state_code': _toNum(raw['status']).toInt(),
+      'created_at': _toNum(raw['created_at']).toInt(),
+      'updated_at': _toNum(raw['updated_at']).toInt(),
+    };
+  }
+
+  Map<String, dynamic> _mapTicketDetail(Map<String, dynamic> raw) {
+    final rawMessages = (raw['message'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => _mapTicketMessage(Map<String, dynamic>.from(item)))
+        .toList();
+    final firstMessage =
+        rawMessages.isNotEmpty ? rawMessages.first : const <String, dynamic>{};
+    return <String, dynamic>{
+      ..._mapTicket(raw),
+      'body': firstMessage['body']?.toString() ?? '',
+      'messages': rawMessages.length > 1 ? rawMessages.skip(1).toList() : const [],
+    };
+  }
+
+  Map<String, dynamic> _mapTicketMessage(Map<String, dynamic> raw) {
+    return <String, dynamic>{
+      'message_id': _toNum(raw['id']).toInt(),
+      'ticket_id': _toNum(raw['ticket_id']).toInt(),
+      'is_mine': _toBool(raw['is_me']),
+      'body': raw['message']?.toString() ?? '',
+      'created_at': _toNum(raw['created_at']).toInt(),
+      'updated_at': _toNum(raw['updated_at']).toInt(),
+    };
+  }
+
+  Map<String, dynamic> _mapTrafficLog(Map<String, dynamic> raw) {
+    final uploaded = _toNum(raw['u']).toInt();
+    final downloaded = _toNum(raw['d']).toInt();
+    final rateMultiplier = _toNum(raw['server_rate']).toDouble();
+    return <String, dynamic>{
+      'uploaded_amount': uploaded,
+      'downloaded_amount': downloaded,
+      'charged_amount': ((uploaded + downloaded) * rateMultiplier).round(),
+      'rate_multiplier': rateMultiplier,
+      'recorded_at': _toNum(raw['record_at']).toInt(),
+    };
+  }
+
   Map<String, dynamic> _mapReward(Map raw) {
     return <String, dynamic>{
       'message': raw['message'] ?? 'ok',
@@ -1131,16 +1367,47 @@ class _AppApiService {
   Future<bool> _hasPendingOrderConflict(
     UpstreamAuth auth,
     UpstreamException error,
+    {
+    required int planId,
+    String? periodKey,
+  }
   ) async {
     if (error.statusCode != HttpStatus.badRequest) {
       return false;
     }
     try {
       final orders = await upstreamApi.fetchOrders(auth);
-      return orders.any((item) => _toNum(item['status']).toInt() == 0);
+      return orders.any((item) {
+        if (_toNum(item['status']).toInt() != 0) {
+          return false;
+        }
+        final orderPlan = item['plan'];
+        final orderPlanId = orderPlan is Map ? _toNum(orderPlan['id']).toInt() : 0;
+        if (planId > 0 && orderPlanId > 0 && planId != orderPlanId) {
+          return false;
+        }
+        final orderPeriod = item['period']?.toString().trim();
+        if (periodKey != null &&
+            periodKey.isNotEmpty &&
+            orderPeriod != null &&
+            orderPeriod.isNotEmpty &&
+            periodKey != orderPeriod) {
+          return false;
+        }
+        return true;
+      });
     } catch (_) {
       return false;
     }
+  }
+
+  bool _hasUsableSubscription(Object? raw) {
+    if (raw is! Map) {
+      return false;
+    }
+    final subscribeUrl = raw['subscribe_url']?.toString().trim() ?? '';
+    final totalBytes = _toNum(raw['transfer_enable']).toInt();
+    return subscribeUrl.isNotEmpty && totalBytes > 0;
   }
 
   Map<String, dynamic> _mapGuestConfig(Map raw) {
@@ -1256,6 +1523,38 @@ class _AppApiService {
       404 => 'route.not_found',
       502 => 'upstream.failed',
       _ => 'request.failed',
+    };
+  }
+
+  String _codeForUpstreamError(
+    UpstreamException error,
+    int status,
+    String? operation,
+  ) {
+    if (status == HttpStatus.badGateway) {
+      return 'upstream.failed';
+    }
+    if (status == HttpStatus.unauthorized) {
+      return 'auth.invalid';
+    }
+    if (status == HttpStatus.notFound) {
+      return 'route.not_found';
+    }
+    if (status != HttpStatus.badRequest || operation == null) {
+      return _codeForStatus(status);
+    }
+    return switch (operation) {
+      'auth.login' => 'auth.invalid',
+      'commerce.coupon' => 'commerce.coupon_invalid',
+      'commerce.checkout' => 'commerce.payment_method_unavailable',
+      'referrals.transfer' => 'referrals.no_withdrawable_commission',
+      'referrals.withdrawal' => 'referrals.withdrawal_unavailable',
+      'support.ticket.create' => 'support.ticket_invalid',
+      'support.ticket.reply' => 'support.ticket_reply_unavailable',
+      'support.ticket.close' => 'support.ticket_close_unavailable',
+      'support.ticket.detail' => 'support.ticket_not_found',
+      'rewards.redeem' => 'rewards.redeem_failed',
+      _ => _codeForStatus(status),
     };
   }
 

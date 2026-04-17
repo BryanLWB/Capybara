@@ -21,4 +21,20 @@ void main() {
       'year_price',
     ]);
   });
+
+  test('plan view data preserves rich content for detail rendering', () {
+    final plan = WebPlanViewData.fromJson(<String, dynamic>{
+      'plan_id': 2,
+      'title': 'Pro',
+      'summary':
+          '## 套餐亮点\n\n- 支持更多地区\n- **适合主力使用**\n\n[查看说明](https://example.com)',
+      'transfer_bytes': 50 * 1024 * 1024 * 1024,
+      'monthly_amount': 680,
+    });
+
+    expect(plan.summary, contains('套餐亮点'));
+    expect(plan.richContentHtml, contains('套餐亮点</h2>'));
+    expect(plan.richContentHtml, contains('<strong>适合主力使用</strong>'));
+    expect(plan.features, isNotEmpty);
+  });
 }

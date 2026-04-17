@@ -220,6 +220,26 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchServers(UpstreamAuth auth) async {
+    final response = await _get('/api/v1/user/server/fetch', auth: auth);
+    final data = response['data'];
+    if (data is List) {
+      return data.map((item) => Map<String, dynamic>.from(item)).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTrafficLogs(UpstreamAuth auth) async {
+    final response = await _get('/api/v1/user/stat/getTrafficLog', auth: auth);
+    final data = response['data'];
+    if (data is List) {
+      return data.map((item) => Map<String, dynamic>.from(item)).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> fetchPaymentMethods(
       UpstreamAuth auth) async {
     final response = await _get(
@@ -383,6 +403,82 @@ class UpstreamPanelApi implements UpstreamApi {
         'withdraw_method': method,
         'withdraw_account': account,
       },
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTickets(UpstreamAuth auth) async {
+    final response = await _get('/api/v1/user/ticket/fetch', auth: auth);
+    final data = response['data'];
+    if (data is List) {
+      return data.map((item) => Map<String, dynamic>.from(item)).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchTicketDetail(
+    UpstreamAuth auth, {
+    required int ticketId,
+  }) async {
+    final response = await _get(
+      '/api/v1/user/ticket/fetch',
+      auth: auth,
+      query: {'id': '$ticketId'},
+    );
+    final data = response['data'];
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    return <String, dynamic>{};
+  }
+
+  @override
+  Future<void> createTicket(
+    UpstreamAuth auth, {
+    required String subject,
+    required int level,
+    required String message,
+  }) async {
+    await _post(
+      '/api/v1/user/ticket/save',
+      auth: auth,
+      body: {
+        'subject': subject,
+        'level': '$level',
+        'message': message,
+      },
+    );
+  }
+
+  @override
+  Future<void> replyTicket(
+    UpstreamAuth auth, {
+    required int ticketId,
+    required String message,
+  }) async {
+    await _post(
+      '/api/v1/user/ticket/reply',
+      auth: auth,
+      body: {
+        'id': '$ticketId',
+        'message': message,
+      },
+    );
+  }
+
+  @override
+  Future<void> closeTicket(
+    UpstreamAuth auth, {
+    required int ticketId,
+  }) async {
+    await _post(
+      '/api/v1/user/ticket/close',
+      auth: auth,
+      body: {'id': '$ticketId'},
     );
   }
 

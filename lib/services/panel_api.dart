@@ -6,11 +6,13 @@ class PanelApiException implements Exception {
   PanelApiException({
     required this.statusCode,
     required this.message,
+    this.code,
     this.body,
   });
 
   final int statusCode;
   final String message;
+  final String? code;
   final String? body;
 
   @override
@@ -394,6 +396,7 @@ class PanelApi {
     return PanelApiException(
       statusCode: error.statusCode,
       message: error.message,
+      code: error.code,
       body: error.body,
     );
   }

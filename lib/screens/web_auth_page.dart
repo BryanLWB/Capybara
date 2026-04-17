@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/api_config.dart';
 import '../services/panel_api.dart';
 import '../theme/app_colors.dart';
+import '../utils/web_error_text.dart';
 import '../widgets/animated_background.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
@@ -72,6 +73,13 @@ class _WebAuthPageState extends State<WebAuthPage> {
     _inviteController.text = inviteCode.trim();
   }
 
+  void _setMode(WebAuthMode mode) {
+    setState(() {
+      _mode = mode;
+      _message = null;
+    });
+  }
+
   @override
   void dispose() {
     _countdownTimer?.cancel();
@@ -84,6 +92,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
   }
 
   Future<void> _submit() async {
+    final isChinese = _isChinese(context);
     setState(() {
       _loading = true;
       _message = null;
@@ -133,8 +142,13 @@ class _WebAuthPageState extends State<WebAuthPage> {
 
       widget.onAuthed();
     } catch (error) {
-      final message =
-          error is PanelApiException ? error.message : error.toString();
+      final message = webErrorText(
+        error,
+        isChinese: isChinese,
+        context: _mode == WebAuthMode.login
+            ? WebErrorContext.authLogin
+            : WebErrorContext.authForm,
+      );
       if (mounted) {
         setState(() {
           _message = message;
@@ -149,6 +163,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
 
   Future<void> _sendVerify() async {
     if (_countdown > 0 || _isSendingVerify) return;
+    final isChinese = _isChinese(context);
 
     setState(() {
       _isSendingVerify = true;
@@ -159,7 +174,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
       await _api.sendEmailVerify(_emailController.text.trim());
       if (mounted) {
         setState(() {
-          _message = _isChinese(context)
+          _message = isChinese
               ? '验证码已发送，请留意邮箱'
               : 'Verification code sent. Please check your inbox.';
           _isSendingVerify = false;
@@ -167,8 +182,11 @@ class _WebAuthPageState extends State<WebAuthPage> {
       }
       _startCountdown();
     } catch (error) {
-      final message =
-          error is PanelApiException ? error.message : error.toString();
+      final message = webErrorText(
+        error,
+        isChinese: isChinese,
+        context: WebErrorContext.authForm,
+      );
       if (mounted) {
         setState(() {
           _message = message;
@@ -265,8 +283,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
           const SizedBox(height: 16),
           Text(
             isChinese
-                ? '一个更适合网页访问的轻量控制台入口。'
-                : 'A focused web console experience built on the same Capybara design system.',
+                ? '一个适合日常查看订阅、公告和账户信息的会员中心。'
+                : 'A member center for announcements, subscriptions, and account access.',
             style: Theme.of(context).textTheme.displayMedium?.copyWith(
                   fontSize: 28,
                   height: 1.3,
@@ -275,8 +293,8 @@ class _WebAuthPageState extends State<WebAuthPage> {
           const SizedBox(height: 18),
           Text(
             isChinese
-                ? '登录后你可以查看公告、订阅概览、快捷入口，并通过右下角客服浮窗直接联系支持。'
-                : 'Sign in to view announcements, subscription summaries, shortcuts, and reach support from the Crisp bubble.',
+                ? '登录后可以查看公告、订阅信息和常用入口，也可以通过右下角在线客服获得帮助。'
+                : 'Sign in to view announcements, subscription details, quick actions, and contact support from the chat widget.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontSize: 16,
                   height: 1.7,
@@ -316,6 +334,9 @@ class _WebAuthPageState extends State<WebAuthPage> {
             label: isChinese ? '邮箱地址' : 'Email Address',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
+            textInputAction: _mode == WebAuthMode.login
+                ? TextInputAction.next
+                : TextInputAction.next,
           ),
           const SizedBox(height: 14),
           if (_mode == WebAuthMode.register) ...[
@@ -323,6 +344,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
               controller: _inviteController,
               label: isChinese ? '邀请码（可选）' : 'Invite Code (Optional)',
               icon: Icons.redeem_outlined,
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 14),
           ],
@@ -331,6 +353,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
               controller: _emailCodeController,
               label: isChinese ? '邮箱验证码' : 'Email Verification Code',
               icon: Icons.mark_email_read_outlined,
+              textInputAction: TextInputAction.next,
               suffix: _buildVerifyButton(isChinese),
             ),
             const SizedBox(height: 14),
@@ -343,6 +366,12 @@ class _WebAuthPageState extends State<WebAuthPage> {
                 ? (isChinese ? '新密码' : 'New Password')
                 : (isChinese ? '密码' : 'Password'),
             icon: Icons.lock_outline_rounded,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) {
+              if (!_loading) {
+                _submit();
+              }
+            },
             obscureText:
                 _mode == WebAuthMode.reset ? _hideNewPassword : _hidePassword,
             suffix: IconButton(
@@ -368,7 +397,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () => setState(() => _mode = WebAuthMode.reset),
+                onPressed: () => _setMode(WebAuthMode.reset),
                 child: Text(
                   isChinese ? '忘记密码？' : 'Forgot Password?',
                 ),
@@ -427,7 +456,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
               style: const TextStyle(color: AppColors.textSecondary),
             ),
             TextButton(
-              onPressed: () => setState(() => _mode = WebAuthMode.register),
+              onPressed: () => _setMode(WebAuthMode.register),
               child: Text(isChinese ? '立即注册' : 'Create one'),
             ),
           ],
@@ -443,7 +472,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
               style: const TextStyle(color: AppColors.textSecondary),
             ),
             TextButton(
-              onPressed: () => setState(() => _mode = WebAuthMode.login),
+              onPressed: () => _setMode(WebAuthMode.login),
               child: Text(isChinese ? '返回登录' : 'Back to login'),
             ),
           ],
@@ -452,7 +481,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
         return Align(
           alignment: Alignment.center,
           child: TextButton(
-            onPressed: () => setState(() => _mode = WebAuthMode.login),
+            onPressed: () => _setMode(WebAuthMode.login),
             child: Text(isChinese ? '返回登录' : 'Back to login'),
           ),
         );
@@ -480,11 +509,15 @@ class _WebAuthPageState extends State<WebAuthPage> {
     required IconData icon,
     bool obscureText = false,
     TextInputType? keyboardType,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
     Widget? suffix,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
       obscureText: obscureText,
       style: const TextStyle(color: AppColors.textPrimary),
       decoration: InputDecoration(
@@ -498,7 +531,7 @@ class _WebAuthPageState extends State<WebAuthPage> {
   String _title(bool isChinese) {
     switch (_mode) {
       case WebAuthMode.login:
-        return isChinese ? '登录你的网页控制台' : 'Sign in to your web console';
+        return isChinese ? '登录你的会员中心' : 'Sign in to your member center';
       case WebAuthMode.register:
         return isChinese ? '创建一个新的账号' : 'Create a new account';
       case WebAuthMode.reset:

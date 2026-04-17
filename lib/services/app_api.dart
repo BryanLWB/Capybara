@@ -165,6 +165,10 @@ class AppApi {
     );
   }
 
+  Future<Map<String, dynamic>> getTrafficLogs() {
+    return _get('/account/traffic-logs');
+  }
+
   Future<Map<String, dynamic>> getNotices() {
     return _get('/content/notices');
   }
@@ -184,6 +188,10 @@ class AppApi {
       '/content/help/articles/$articleId',
       query: <String, String>{'language': language},
     );
+  }
+
+  Future<Map<String, dynamic>> getNodeStatuses() {
+    return _get('/client/nodes/status');
   }
 
   Future<Map<String, dynamic>> getPaymentMethods() {
@@ -276,6 +284,46 @@ class AppApi {
         'withdraw_method': method.trim(),
         'withdraw_account': account.trim(),
       },
+    );
+  }
+
+  Future<Map<String, dynamic>> getTickets() {
+    return _get('/support/tickets');
+  }
+
+  Future<Map<String, dynamic>> getTicketDetail(int ticketId) {
+    return _get('/support/tickets/$ticketId');
+  }
+
+  Future<Map<String, dynamic>> createTicket({
+    required String subject,
+    required int priorityLevel,
+    required String message,
+  }) {
+    return _post(
+      '/support/tickets',
+      body: <String, dynamic>{
+        'subject': subject.trim(),
+        'priority_level': priorityLevel,
+        'message': message.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> replyTicket({
+    required int ticketId,
+    required String message,
+  }) {
+    return _post(
+      '/support/tickets/$ticketId/reply',
+      body: <String, dynamic>{'message': message.trim()},
+    );
+  }
+
+  Future<Map<String, dynamic>> closeTicket(int ticketId) {
+    return _post(
+      '/support/tickets/$ticketId/close',
+      body: const <String, dynamic>{},
     );
   }
 

@@ -1,4 +1,5 @@
 import 'user_info.dart';
+import '../utils/rich_content_utils.dart';
 
 class WebHomeViewData {
   WebHomeViewData({
@@ -32,6 +33,13 @@ class WebHomeViewData {
   }
 
   WebNoticeViewData? get latestNotice => notices.isEmpty ? null : notices.first;
+  WebNoticeViewData? currentNoticeAt(int index) {
+    if (notices.isEmpty) {
+      return null;
+    }
+    final safeIndex = index % notices.length;
+    return notices[safeIndex];
+  }
 
   factory WebHomeViewData.fromSources({
     required UserInfo user,
@@ -79,24 +87,28 @@ class WebNoticeViewData {
     required this.id,
     required this.title,
     required this.body,
+    required this.bodyHtml,
     required this.createdAt,
   });
 
   final int id;
   final String title;
   final String body;
+  final String bodyHtml;
   final int createdAt;
 
   factory WebNoticeViewData.fromMap(Map<String, dynamic> map) {
+    final content = buildRichContentData(map['content']?.toString() ?? '');
     return WebNoticeViewData(
       id: WebHomeViewData._toInt(map['id']),
-      title: _plainText(map['title']?.toString() ?? ''),
-      body: _plainText(map['content']?.toString() ?? ''),
+      title: contentTitle(map['title']?.toString() ?? ''),
+      body: content.plainText,
+      bodyHtml: content.html,
       createdAt: WebHomeViewData._toInt(map['created_at']),
     );
   }
 
-  static String _plainText(String value) {
+  static String contentTitle(String value) {
     if (value.isEmpty) return '';
 
     final decoded = value

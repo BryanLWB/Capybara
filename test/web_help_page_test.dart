@@ -204,7 +204,38 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(fallbackOpened, isTrue);
-    expect(find.textContaining('已尝试打开客服入口'), findsOneWidget);
+    expect(find.textContaining('已为你尝试打开在线客服'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('help page always requests zh-CN knowledge content',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    String? loadedLanguage;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: const [Locale('en'), Locale('zh')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: Scaffold(
+          body: WebHelpPage(
+            categoriesLoader: (language) async {
+              loadedLanguage = language;
+              return <HelpCategory>[];
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(loadedLanguage, 'zh-CN');
     expect(tester.takeException(), isNull);
   });
 }

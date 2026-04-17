@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -12,9 +14,11 @@ import '../services/panel_api.dart';
 import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
+import '../utils/web_error_text.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
+import '../widgets/rich_content_view.dart';
 
 typedef WebHomeDataLoader = Future<WebHomeViewData> Function(bool forceRefresh);
 typedef WebSubscriptionAccessLinkCreator = Future<String> Function(
@@ -47,11 +51,22 @@ class _WebHomePageState extends State<WebHomePage> {
   late Future<WebHomeViewData> _future;
   String _selectedPlatform = 'ios';
   bool _quickActionBusy = false;
+  Timer? _noticeTimer;
+  int _noticeIndex = 0;
+  int _noticeCount = 0;
+  bool _noticeDialogOpen = false;
+  String _noticeSignature = '';
 
   @override
   void initState() {
     super.initState();
     _future = _load(false);
+  }
+
+  @override
+  void dispose() {
+    _noticeTimer?.cancel();
+    super.dispose();
   }
 
   Future<WebHomeViewData> _load([bool forceRefresh = false]) async {
@@ -91,13 +106,26 @@ class _WebHomePageState extends State<WebHomePage> {
     return _facade.loadClientDownloads();
   }
 
-  Future<void> _copySubscriptionLink(bool isChinese) async {
+  Future<void> _copySubscriptionLink(
+    bool isChinese, {
+    required bool hasSubscription,
+  }) async {
     if (_quickActionBusy) return;
+    if (!hasSubscription) {
+      _showSnack(isChinese ? '开通套餐后即可使用订阅链接。' : 'Subscription unavailable.');
+      return;
+    }
     setState(() => _quickActionBusy = true);
     try {
       final link = await _createAccessLink();
       if (link.isEmpty) {
-        throw AppApiException(statusCode: 502, message: 'Request failed');
+        if (!mounted) return;
+        _showSnack(
+          isChinese
+              ? '暂时无法获取订阅链接，请稍后再试。'
+              : 'The subscription link is not available right now. Please try again later.',
+        );
+        return;
       }
       await Clipboard.setData(ClipboardData(text: link));
       if (!mounted) return;
@@ -111,13 +139,26 @@ class _WebHomePageState extends State<WebHomePage> {
     }
   }
 
-  Future<void> _showSubscriptionQr(bool isChinese) async {
+  Future<void> _showSubscriptionQr(
+    bool isChinese, {
+    required bool hasSubscription,
+  }) async {
     if (_quickActionBusy) return;
+    if (!hasSubscription) {
+      _showSnack(isChinese ? '开通套餐后即可使用订阅链接。' : 'Subscription unavailable.');
+      return;
+    }
     setState(() => _quickActionBusy = true);
     try {
       final link = await _createAccessLink();
       if (link.isEmpty) {
-        throw AppApiException(statusCode: 502, message: 'Request failed');
+        if (!mounted) return;
+        _showSnack(
+          isChinese
+              ? '暂时无法生成二维码，请稍后再试。'
+              : 'The QR code is not available right now. Please try again later.',
+        );
+        return;
       }
       if (!mounted) return;
       await showDialog<void>(
@@ -155,15 +196,21 @@ class _WebHomePageState extends State<WebHomePage> {
         if (!mounted) return;
         _showSnack(
           isChinese
-              ? '后台还没有配置该平台下载地址，已切到帮助页。'
-              : 'No download is configured for this platform. Opening Help.',
+              ? '当前平台暂未提供下载入口，已为你打开帮助中心。'
+              : 'This platform download is not available right now. Opening Help.',
         );
         widget.onNavigate(WebShellSection.help);
         return;
       }
       final uri = Uri.tryParse(url);
       if (uri == null) {
-        throw AppApiException(statusCode: 502, message: 'Request failed');
+        if (!mounted) return;
+        _showSnack(
+          isChinese
+              ? '下载入口暂时不可用，请稍后再试。'
+              : 'The download link is not available right now. Please try again later.',
+        );
+        return;
       }
       final opened = await launchUrl(uri, webOnlyWindowName: '_blank');
       if (!opened && mounted) {
@@ -183,13 +230,79 @@ class _WebHomePageState extends State<WebHomePage> {
       return;
     }
     if (!mounted) return;
-    _showSnack(error.toString());
+    _showSnack(
+      webErrorText(
+        error,
+        isChinese: isChinese,
+        context: WebErrorContext.quickAction,
+      ),
+    );
   }
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  void _syncNoticeRotation(List<WebNoticeViewData> notices) {
+    final count = notices.length;
+    final signature = notices
+        .map((notice) => '${notice.id}:${notice.createdAt}:${notice.title}:${notice.body}')
+        .join('|');
+    if (_noticeCount == count && _noticeSignature == signature) {
+      return;
+    }
+
+    _noticeCount = count;
+    _noticeSignature = signature;
+    _noticeIndex = 0;
+    _restartNoticeRotation();
+  }
+
+  void _restartNoticeRotation() {
+    _noticeTimer?.cancel();
+    if (_noticeCount <= 1) {
+      return;
+    }
+
+    _noticeTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted || _noticeDialogOpen || _noticeCount <= 1) {
+        return;
+      }
+      setState(() {
+        _noticeIndex = (_noticeIndex + 1) % _noticeCount;
+      });
+    });
+  }
+
+  void _selectNotice(int index) {
+    if (_noticeCount <= 0) {
+      return;
+    }
+    setState(() {
+      _noticeIndex = index % _noticeCount;
+    });
+    _restartNoticeRotation();
+  }
+
+  Future<void> _openNoticeDialog(
+    WebNoticeViewData notice,
+    bool isChinese,
+  ) async {
+    _noticeDialogOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _NoticeDetailDialog(
+          notice: notice,
+          isChinese: isChinese,
+        ),
+      );
+    } finally {
+      _noticeDialogOpen = false;
+      _restartNoticeRotation();
+    }
   }
 
   String _flagForPlatform(String platform) {
@@ -221,7 +334,15 @@ class _WebHomePageState extends State<WebHomePage> {
             _handleUnauthorized();
             return const Center(child: CapybaraLoader());
           }
-          return _buildErrorState(context, isChinese, '$error');
+          return _buildErrorState(
+            context,
+            isChinese,
+            webErrorText(
+              error ?? StateError('home.load.failed'),
+              isChinese: isChinese,
+              context: WebErrorContext.pageLoad,
+            ),
+          );
         }
 
         if (!snapshot.hasData) {
@@ -229,6 +350,7 @@ class _WebHomePageState extends State<WebHomePage> {
         }
 
         final data = snapshot.data!;
+        _syncNoticeRotation(data.notices);
         final width = MediaQuery.of(context).size.width;
         final isWide = width >= 1180;
         final isMedium = width >= 900;
@@ -269,6 +391,7 @@ class _WebHomePageState extends State<WebHomePage> {
                               child: _buildQuickUsageSection(
                                 context,
                                 isChinese,
+                                hasSubscription: data.hasSubscription,
                                 dense: true,
                               ),
                             ),
@@ -288,7 +411,11 @@ class _WebHomePageState extends State<WebHomePage> {
                         ],
                       )
                     else ...[
-                      _buildQuickUsageSection(context, isChinese),
+                      _buildQuickUsageSection(
+                        context,
+                        isChinese,
+                        hasSubscription: data.hasSubscription,
+                      ),
                       const SizedBox(height: 16),
                       _buildQuickLinksSection(context, isChinese, isMedium),
                     ],
@@ -356,8 +483,7 @@ class _WebHomePageState extends State<WebHomePage> {
     WebHomeViewData data,
     bool isChinese,
   ) {
-    final latestNotice = data.latestNotice;
-    final extraNotices = data.notices.skip(1).take(3).toList();
+    final currentNotice = data.currentNoticeAt(_noticeIndex);
 
     return GradientCard(
       padding: const EdgeInsets.all(20),
@@ -377,10 +503,10 @@ class _WebHomePageState extends State<WebHomePage> {
                       text: isChinese ? '公告' : 'Announcements',
                     ),
                     const SizedBox(height: 10),
-                    Text(
+                  Text(
                       isChinese
-                          ? '首页公告已同步面板最新内容'
-                          : 'Latest panel notices synced into the web home',
+                          ? '点击公告即可查看完整内容。'
+                          : 'Tap an announcement to view the full message.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: AppColors.textSecondary,
                           ),
@@ -397,45 +523,37 @@ class _WebHomePageState extends State<WebHomePage> {
             ],
           ),
           const SizedBox(height: 16),
-          if (latestNotice == null)
+          if (currentNotice == null)
             _buildEmptyCard(
               context,
               icon: Icons.campaign_outlined,
               title: isChinese ? '暂无公告' : 'No announcements yet',
               subtitle: isChinese
-                  ? '面板还没有发布公告，后续内容会直接显示在这里。'
-                  : 'No notice has been published yet. New items will appear here automatically.',
+                  ? '暂时还没有新的公告，新的通知会显示在这里。'
+                  : 'There are no announcements right now. New updates will appear here.',
             )
           else
-            Container(
-              width: double.infinity,
+            AnimatedCard(
+              key: Key('web-home-notice-card-${currentNotice.id}'),
+              onTap: () => _openNoticeDialog(currentNotice, isChinese),
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.accent.withValues(alpha: 0.14),
-                    AppColors.surfaceAlt.withValues(alpha: 0.88),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.18),
-                ),
-              ),
+              enableBreathing: false,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       _CountBadge(
-                        label: isChinese ? '最新公告' : 'Latest Notice',
+                        label: data.notices.length > 1
+                            ? (isChinese
+                                ? '第 ${(_noticeIndex % data.notices.length) + 1} / ${data.notices.length} 条'
+                                : '${(_noticeIndex % data.notices.length) + 1} / ${data.notices.length}')
+                            : (isChinese ? '最新公告' : 'Latest'),
                         compact: true,
                       ),
                       const Spacer(),
                       Text(
-                        Formatters.formatEpoch(latestNotice.createdAt),
+                        Formatters.formatEpoch(currentNotice.createdAt),
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -444,44 +562,47 @@ class _WebHomePageState extends State<WebHomePage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    latestNotice.title.isEmpty
-                        ? (isChinese ? '系统公告' : 'System Notice')
-                        : latestNotice.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          fontSize: 28,
-                          height: 1.1,
-                        ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: Text(
+                      key: ValueKey(currentNotice.id),
+                      currentNotice.title.isEmpty
+                          ? (isChinese ? '系统公告' : 'System Announcement')
+                          : currentNotice.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                            fontSize: 28,
+                            height: 1.1,
+                          ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    latestNotice.body.isEmpty
-                        ? (isChinese
-                            ? '该公告暂无详细内容。'
-                            : 'No detailed content provided for this notice.')
-                        : latestNotice.body,
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(fontSize: 14, height: 1.5),
+                    isChinese ? '点击查看公告详情' : 'Tap to read the full announcement',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
                   ),
-                  if (extraNotices.isNotEmpty) ...[
+                  if (data.notices.length > 1) ...[
                     const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: extraNotices
-                          .map(
-                            (notice) => _NoticeChip(
-                              label: notice.title.isEmpty
-                                  ? (isChinese ? '未命名公告' : 'Untitled Notice')
-                                  : notice.title,
-                            ),
-                          )
-                          .toList(),
+                    Center(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: List<Widget>.generate(
+                          data.notices.length,
+                          (index) => _NoticeDot(
+                            key: Key('web-home-notice-dot-$index'),
+                            active: index == (_noticeIndex % data.notices.length),
+                            onTap: () => _selectNotice(index),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ],
@@ -523,8 +644,8 @@ class _WebHomePageState extends State<WebHomePage> {
             _InteractiveSubscriptionPlaceholder(
               title: isChinese ? '你还没有有效订阅' : 'No active subscription',
               subtitle: isChinese
-                  ? '悬浮后点击这张卡片，直接跳转到购买页面。'
-                  : 'Hover and click this card to jump to the purchase page.',
+                  ? '点击这张卡片即可查看可选套餐。'
+                  : 'Open this card to view available plans.',
               onTap: () => widget.onNavigate(WebShellSection.purchase),
             )
           else ...[
@@ -630,6 +751,7 @@ class _WebHomePageState extends State<WebHomePage> {
   Widget _buildQuickUsageSection(
     BuildContext context,
     bool isChinese, {
+    required bool hasSubscription,
     bool dense = false,
   }) {
     final platformButtons = [
@@ -644,8 +766,8 @@ class _WebHomePageState extends State<WebHomePage> {
         icon: Icons.download_rounded,
         title: isChinese ? '下载客户端' : 'Download Client',
         subtitle: isChinese
-            ? '从后台配置的下载入口获取当前平台客户端。'
-            : 'Open the configured download for the selected platform.',
+            ? '打开当前平台可用的客户端下载入口。'
+            : 'Open the available download for the selected platform.',
         statusLabel: _quickActionBusy
             ? (isChinese ? '处理中' : 'Working')
             : (isChinese ? '打开' : 'Open'),
@@ -655,23 +777,29 @@ class _WebHomePageState extends State<WebHomePage> {
         icon: Icons.link_rounded,
         title: isChinese ? '复制订阅链接' : 'Copy Subscription Link',
         subtitle: isChinese
-            ? '复制中性订阅链接，不暴露上游面板地址。'
-            : 'Copy a neutral subscription link without exposing upstream.',
+            ? '复制可直接导入客户端的订阅链接。'
+            : 'Copy a subscription link that can be imported into your client.',
         statusLabel: _quickActionBusy
             ? (isChinese ? '处理中' : 'Working')
             : (isChinese ? '复制' : 'Copy'),
-        onTap: () => _copySubscriptionLink(isChinese),
+        onTap: () => _copySubscriptionLink(
+          isChinese,
+          hasSubscription: hasSubscription,
+        ),
       ),
       _UsageAction(
         icon: Icons.qr_code_2_rounded,
         title: isChinese ? '二维码订阅' : 'QR Subscribe',
         subtitle: isChinese
-            ? '生成当前平台可用的中性订阅二维码。'
-            : 'Generate a neutral subscription QR for this platform.',
+            ? '生成可用于导入客户端的订阅二维码。'
+            : 'Generate a QR code for importing this subscription.',
         statusLabel: _quickActionBusy
             ? (isChinese ? '处理中' : 'Working')
             : (isChinese ? '生成' : 'Show'),
-        onTap: () => _showSubscriptionQr(isChinese),
+        onTap: () => _showSubscriptionQr(
+          isChinese,
+          hasSubscription: hasSubscription,
+        ),
       ),
     ];
 
@@ -749,22 +877,22 @@ class _WebHomePageState extends State<WebHomePage> {
         section: WebShellSection.help,
         title: isChinese ? '帮助中心' : 'Help Center',
         subtitle: isChinese
-            ? '查看帮助内容或使用右下角客服。'
-            : 'Open help content or use the Crisp bubble.',
+            ? '查看使用说明，或直接联系在线客服。'
+            : 'Read help articles or contact support directly.',
       ),
       _QuickLinkCardData(
         section: WebShellSection.invite,
         title: isChinese ? '邀请返利' : 'Invite Program',
         subtitle: isChinese
-            ? '邀请与返利入口将在这里补齐。'
-            : 'Referral entry will be completed here.',
+            ? '查看邀请链接、返利和佣金记录。'
+            : 'View your invite link, rewards, and commission records.',
       ),
       _QuickLinkCardData(
         section: WebShellSection.account,
         title: isChinese ? '账号设置' : 'Account',
         subtitle: isChinese
-            ? '个人资料与偏好后续集中放这里。'
-            : 'Profile and preferences will live here later.',
+            ? '管理余额、通知与账户安全设置。'
+            : 'Manage balance, notifications, and account security.',
       ),
     ];
 
@@ -986,9 +1114,136 @@ class _CountBadge extends StatelessWidget {
   }
 }
 
+class _NoticeDetailDialog extends StatelessWidget {
+  const _NoticeDetailDialog({
+    required this.notice,
+    required this.isChinese,
+  });
+
+  final WebNoticeViewData notice;
+  final bool isChinese;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      key: const Key('web-home-notice-dialog'),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
+        child: GradientCard(
+          borderRadius: 30,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notice.title.isEmpty
+                              ? (isChinese ? '系统公告' : 'System Announcement')
+                              : notice.title,
+                          style: Theme.of(context)
+                              .textTheme
+                              .displayMedium
+                              ?.copyWith(fontSize: 30, height: 1.15),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          Formatters.formatEpoch(notice.createdAt),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: isChinese ? '关闭' : 'Close',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                  child: SingleChildScrollView(
+                  child: notice.bodyHtml.isEmpty
+                      ? Text(
+                          notice.body.isEmpty
+                              ? (isChinese
+                                  ? '这条公告暂时没有更多内容。'
+                                  : 'No more details are available for this announcement.')
+                              : notice.body,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textPrimary,
+                                height: 1.65,
+                              ),
+                        )
+                      : RichContentView(html: notice.bodyHtml),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoticeDot extends StatelessWidget {
+  const _NoticeDot({
+    super.key,
+    required this.active,
+    required this.onTap,
+  });
+
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          width: active ? 24 : 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.accent
+                : AppColors.textSecondary.withValues(alpha: 0.28),
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                      color: AppColors.accent.withValues(alpha: 0.28),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _InteractiveSubscriptionPlaceholder extends StatelessWidget {
   const _InteractiveSubscriptionPlaceholder({
-    super.key,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -1323,33 +1578,6 @@ class _UsageActionTile extends StatelessWidget {
           const SizedBox(width: 12),
           _CountBadge(label: statusLabel, compact: true),
         ],
-      ),
-    );
-  }
-}
-
-class _NoticeChip extends StatelessWidget {
-  const _NoticeChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 240),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.36),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.textPrimary,
-            ),
       ),
     );
   }

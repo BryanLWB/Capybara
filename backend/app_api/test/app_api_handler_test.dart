@@ -538,6 +538,45 @@ void main() {
     expect(encoded, contains('/api/app/v1/client/subscription/'));
   });
 
+  test('subscription access link requires an active subscription', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+    upstreamApi.subscriptionSummary = <String, dynamic>{
+      'data': <String, dynamic>{
+        'u': 0,
+        'd': 0,
+        'transfer_enable': 0,
+        'subscribe_url': '',
+      },
+    };
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse(
+            'http://localhost/api/app/v1/account/subscription/access-link'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+      ),
+    );
+
+    expect(response.statusCode, 400);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    expect(
+      payload['error'],
+      <String, dynamic>{
+        'code': 'subscription.required',
+        'message': 'Request failed',
+      },
+    );
+  });
+
   test('client downloads maps configured platform urls', () async {
     final session = await sessionStore.create(
       upstreamToken: 'upstream-token',
@@ -563,6 +602,243 @@ void main() {
     expect(items.first, containsPair('available', true));
     expect(items.last, containsPair('platform', 'ios'));
     expect(items.last, containsPair('available', false));
+  });
+
+  test('node status maps public fields', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/client/nodes/status'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final items =
+        (payload['data'] as Map<String, dynamic>)['items'] as List<dynamic>;
+    expect(items, hasLength(1));
+    expect(
+      items.first,
+      <String, dynamic>{
+        'node_id': 101,
+        'display_name': 'Sydney 01',
+        'protocol_type': 'shadowsocks',
+        'version': '1.0',
+        'rate': 1.5,
+        'tags': <String>['AU', 'Premium'],
+        'is_online': true,
+        'last_check_at': 1700000030,
+      },
+    );
+  });
+
+  test('traffic logs map upload download and charged amount', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/account/traffic-logs'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final items =
+        (payload['data'] as Map<String, dynamic>)['items'] as List<dynamic>;
+    expect(items, hasLength(1));
+    expect(
+      items.first,
+      <String, dynamic>{
+        'uploaded_amount': 100,
+        'downloaded_amount': 200,
+        'charged_amount': 600,
+        'rate_multiplier': 2.0,
+        'recorded_at': 1700000040,
+      },
+    );
+  });
+
+  test('ticket list maps summary fields', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/support/tickets'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final items =
+        (payload['data'] as Map<String, dynamic>)['items'] as List<dynamic>;
+    expect(items, hasLength(1));
+    expect(
+      items.first,
+      <String, dynamic>{
+        'ticket_id': 61,
+        'subject': '登录问题',
+        'priority_level': 1,
+        'reply_state': 1,
+        'state_code': 0,
+        'created_at': 1700000050,
+        'updated_at': 1700000060,
+      },
+    );
+  });
+
+  test('ticket detail maps messages timeline', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/support/tickets/61'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final ticket =
+        (payload['data'] as Map<String, dynamic>)['ticket'] as Map<String, dynamic>;
+    expect(ticket['ticket_id'], 61);
+    expect(ticket['body'], '初始工单内容');
+    expect(ticket['messages'], [
+      <String, dynamic>{
+        'message_id': 502,
+        'ticket_id': 61,
+        'is_mine': true,
+        'body': '我这边无法登录',
+        'created_at': 1700000062,
+        'updated_at': 1700000062,
+      },
+      <String, dynamic>{
+        'message_id': 503,
+        'ticket_id': 61,
+        'is_mine': false,
+        'body': '您好，请尝试重置密码',
+        'created_at': 1700000063,
+        'updated_at': 1700000063,
+      },
+    ]);
+  });
+
+  test('create ticket forwards subject level and message', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/support/tickets'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'subject': ' 无法连接 ',
+          'priority_level': 2,
+          'message': ' 请帮我排查 ',
+        }),
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    expect(upstreamApi.createdTicketSubject, '无法连接');
+    expect(upstreamApi.createdTicketLevel, 2);
+    expect(upstreamApi.createdTicketMessage, '请帮我排查');
+  });
+
+  test('reply ticket forwards ticket id and message', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/support/tickets/61/reply'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'message': ' 我补充一下问题现象 ',
+        }),
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    expect(upstreamApi.repliedTicketId, 61);
+    expect(upstreamApi.repliedTicketMessage, '我补充一下问题现象');
+  });
+
+  test('close ticket forwards ticket id', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse('http://localhost/api/app/v1/support/tickets/61/close'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+        },
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    expect(upstreamApi.closedTicketId, 61);
+  });
+
+  test('new support and node routes require authentication', () async {
+    final endpoints = <String>[
+      'http://localhost/api/app/v1/client/nodes/status',
+      'http://localhost/api/app/v1/account/traffic-logs',
+      'http://localhost/api/app/v1/support/tickets',
+      'http://localhost/api/app/v1/support/tickets/61',
+    ];
+
+    for (final endpoint in endpoints) {
+      final response = await handler(Request('GET', Uri.parse(endpoint)));
+      expect(response.statusCode, 401, reason: endpoint);
+    }
   });
 
   test('withdrawal request forwards method and account', () async {
@@ -857,13 +1133,13 @@ void main() {
       ),
     );
 
-    expect(response.statusCode, 502);
+    expect(response.statusCode, 400);
     final payload =
         jsonDecode(await response.readAsString()) as Map<String, dynamic>;
     expect(
       payload['error'],
       <String, dynamic>{
-        'code': 'upstream.failed',
+        'code': 'rewards.redeem_failed',
         'message': 'Request failed',
       },
     );
@@ -890,11 +1166,94 @@ class _FakeUpstreamApi implements UpstreamApi {
   String? fetchedSubscriptionFlag;
   String? withdrawalMethod;
   String? withdrawalAccount;
+  String? createdTicketSubject;
+  int? createdTicketLevel;
+  String? createdTicketMessage;
+  int? repliedTicketId;
+  String? repliedTicketMessage;
+  int? closedTicketId;
   Object? createOrderFailure;
   List<Map<String, dynamic>> fetchOrdersResponse = <Map<String, dynamic>>[];
+  List<Map<String, dynamic>> fetchServersResponse = <Map<String, dynamic>>[
+    <String, dynamic>{
+      'id': 101,
+      'type': 'shadowsocks',
+      'version': '1.0',
+      'name': 'Sydney 01',
+      'rate': 1.5,
+      'tags': <String>['AU', 'Premium'],
+      'is_online': 1,
+      'last_check_at': 1700000030,
+    },
+  ];
+  List<Map<String, dynamic>> fetchTrafficLogsResponse = <Map<String, dynamic>>[
+    <String, dynamic>{
+      'u': 100,
+      'd': 200,
+      'record_at': 1700000040,
+      'server_rate': 2.0,
+    },
+  ];
+  List<Map<String, dynamic>> fetchTicketsResponse = <Map<String, dynamic>>[
+    <String, dynamic>{
+      'id': 61,
+      'level': 1,
+      'reply_status': 1,
+      'status': 0,
+      'subject': '登录问题',
+      'message': '初始工单内容',
+      'created_at': 1700000050,
+      'updated_at': 1700000060,
+    },
+  ];
+  Map<String, dynamic> fetchTicketDetailResponse = <String, dynamic>{
+    'id': 61,
+    'level': 1,
+    'reply_status': 1,
+    'status': 0,
+    'subject': '登录问题',
+    'created_at': 1700000050,
+    'updated_at': 1700000060,
+    'message': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 501,
+        'ticket_id': 61,
+        'is_me': 1,
+        'message': '初始工单内容',
+        'created_at': 1700000061,
+        'updated_at': 1700000061,
+      },
+      <String, dynamic>{
+        'id': 502,
+        'ticket_id': 61,
+        'is_me': 1,
+        'message': '我这边无法登录',
+        'created_at': 1700000062,
+        'updated_at': 1700000062,
+      },
+      <String, dynamic>{
+        'id': 503,
+        'ticket_id': 61,
+        'is_me': 0,
+        'message': '您好，请尝试重置密码',
+        'created_at': 1700000063,
+        'updated_at': 1700000063,
+      },
+    ],
+  };
   Map<String, dynamic> checkoutResult = <String, dynamic>{
     'type': 0,
     'data': true,
+  };
+  Map<String, dynamic> subscriptionSummary = <String, dynamic>{
+    'data': <String, dynamic>{
+      'u': 10,
+      'd': 20,
+      'transfer_enable': 30,
+      'expired_at': 1700000000,
+      'reset_day': 7,
+      'subscribe_url': 'https://panel.example.test/s/token',
+    },
   };
   Map<String, dynamic> redeemGiftCardResponse = <String, dynamic>{
     'status': 'success',
@@ -1114,6 +1473,10 @@ class _FakeUpstreamApi implements UpstreamApi {
       <Map<String, dynamic>>[];
 
   @override
+  Future<List<Map<String, dynamic>>> fetchServers(UpstreamAuth auth) async =>
+      fetchServersResponse;
+
+  @override
   Future<List<Map<String, dynamic>>> fetchOrders(UpstreamAuth auth) async =>
       fetchOrdersResponse;
 
@@ -1134,18 +1497,24 @@ class _FakeUpstreamApi implements UpstreamApi {
       ];
 
   @override
+  Future<List<Map<String, dynamic>>> fetchTickets(UpstreamAuth auth) async =>
+      fetchTicketsResponse;
+
+  @override
+  Future<Map<String, dynamic>> fetchTicketDetail(
+    UpstreamAuth auth, {
+    required int ticketId,
+  }) async =>
+      fetchTicketDetailResponse;
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTrafficLogs(UpstreamAuth auth) async =>
+      fetchTrafficLogsResponse;
+
+  @override
   Future<Map<String, dynamic>> fetchSubscriptionSummary(
           UpstreamAuth auth) async =>
-      <String, dynamic>{
-        'data': <String, dynamic>{
-          'u': 10,
-          'd': 20,
-          'transfer_enable': 30,
-          'expired_at': 1700000000,
-          'reset_day': 7,
-          'subscribe_url': 'https://panel.example.test/s/token',
-        },
-      };
+      subscriptionSummary;
 
   @override
   Future<String> fetchSubscriptionContent(UpstreamAuth auth,
@@ -1216,6 +1585,36 @@ class _FakeUpstreamApi implements UpstreamApi {
     required String code,
   }) async =>
       redeemGiftCardResponse;
+
+  @override
+  Future<void> createTicket(
+    UpstreamAuth auth, {
+    required String subject,
+    required int level,
+    required String message,
+  }) async {
+    createdTicketSubject = subject;
+    createdTicketLevel = level;
+    createdTicketMessage = message;
+  }
+
+  @override
+  Future<void> replyTicket(
+    UpstreamAuth auth, {
+    required int ticketId,
+    required String message,
+  }) async {
+    repliedTicketId = ticketId;
+    repliedTicketMessage = message;
+  }
+
+  @override
+  Future<void> closeTicket(
+    UpstreamAuth auth, {
+    required int ticketId,
+  }) async {
+    closedTicketId = ticketId;
+  }
 
   @override
   Future<void> updateUserNotifications(

@@ -9,9 +9,11 @@ import '../models/web_purchase_view_data.dart';
 import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
+import '../utils/web_error_text.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
+import '../widgets/rich_content_view.dart';
 import '../widgets/web_page_frame.dart';
 import '../widgets/web_page_hero.dart';
 
@@ -42,12 +44,17 @@ typedef WebOrderCheckout = Future<WebCheckoutActionData> Function(
 );
 typedef WebOrderStatusLoader = Future<int> Function(String orderRef);
 typedef WebPaymentLauncher = Future<bool> Function(Uri uri);
+typedef WebOrdersLoader = Future<List<WebOrderListItemData>> Function();
+typedef WebOrderCanceler = Future<void> Function(String orderRef);
 
-enum _PurchaseStage { catalog, orderSetup, checkout, paymentPending }
+enum _PurchaseStage { catalog, orders, orderSetup, checkout, paymentPending }
 
 class WebPurchasePage extends StatefulWidget {
   const WebPurchasePage({
     super.key,
+    this.initialOrderRef,
+    this.initialFallbackPlan,
+    this.onOpenUserOrders,
     this.plansLoader,
     this.couponValidator,
     this.orderCreator,
@@ -57,8 +64,13 @@ class WebPurchasePage extends StatefulWidget {
     this.orderCheckout,
     this.orderStatusLoader,
     this.paymentLauncher,
+    this.ordersLoader,
+    this.orderCanceler,
   });
 
+  final String? initialOrderRef;
+  final WebPlanViewData? initialFallbackPlan;
+  final VoidCallback? onOpenUserOrders;
   final WebPlansLoader? plansLoader;
   final WebCouponValidator? couponValidator;
   final WebOrderCreator? orderCreator;
@@ -68,6 +80,8 @@ class WebPurchasePage extends StatefulWidget {
   final WebOrderCheckout? orderCheckout;
   final WebOrderStatusLoader? orderStatusLoader;
   final WebPaymentLauncher? paymentLauncher;
+  final WebOrdersLoader? ordersLoader;
+  final WebOrderCanceler? orderCanceler;
 
   @override
   State<WebPurchasePage> createState() => _WebPurchasePageState();
@@ -78,6 +92,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
   final _couponController = TextEditingController();
 
   late Future<List<WebPlanViewData>> _plansFuture;
+  Future<List<WebOrderListItemData>>? _ordersFuture;
   WebPlanFilter _filter = WebPlanFilter.all;
   _PurchaseStage _stage = _PurchaseStage.catalog;
   WebPlanViewData? _selectedPlan;
@@ -87,11 +102,14 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
   WebPaymentMethodData? _selectedPaymentMethod;
   WebCheckoutActionData? _checkoutAction;
   String? _message;
+  String? _messageActionLabel;
+  VoidCallback? _messageOnTap;
   String? _couponMessage;
   bool _isBusy = false;
   bool _isCheckingCoupon = false;
   bool _isPolling = false;
   bool _isDisposed = false;
+  String? _busyOrderRef;
 
   bool _isChinese(BuildContext context) =>
       Localizations.localeOf(context).languageCode.toLowerCase().startsWith(
@@ -102,6 +120,27 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
   void initState() {
     super.initState();
     _plansFuture = _loadPlans();
+    final initialOrderRef = widget.initialOrderRef;
+    if (initialOrderRef != null && initialOrderRef.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_openExistingOrder(initialOrderRef, widget.initialFallbackPlan));
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant WebPurchasePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextOrderRef = widget.initialOrderRef;
+    if (nextOrderRef != null &&
+        nextOrderRef.isNotEmpty &&
+        nextOrderRef != oldWidget.initialOrderRef) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_openExistingOrder(nextOrderRef, widget.initialFallbackPlan));
+      });
+    }
   }
 
   @override
@@ -137,6 +176,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     switch (_stage) {
       case _PurchaseStage.catalog:
         return _buildCatalog(context);
+      case _PurchaseStage.orders:
+        return _buildOrders(context);
       case _PurchaseStage.orderSetup:
         return _buildOrderSetup(context);
       case _PurchaseStage.checkout:
@@ -173,20 +214,25 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
             WebPageHero(
               title: isChinese ? '选择更适合你的套餐' : 'Choose a plan that fits you',
               subtitle: isChinese
-                  ? '套餐来自后台配置。选择套餐后进入周期、优惠券和支付确认流程。'
-                  : 'Plans come from the panel. Pick one to choose a period, coupon, and payment method.',
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: WebPlanFilter.values
-                    .map(
-                      (filter) => _FilterPill(
-                        label: filter.label(isChinese),
-                        selected: _filter == filter,
-                        onTap: () => setState(() => _filter = filter),
-                      ),
-                    )
-                    .toList(),
+                  ? '选择套餐后继续确认周期、优惠码和支付方式。'
+                  : 'Choose a plan, then confirm the billing period, coupon code, and payment method.',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: WebPlanFilter.values
+                        .map(
+                          (filter) => _FilterPill(
+                            label: filter.label(isChinese),
+                            selected: _filter == filter,
+                            onTap: () => setState(() => _filter = filter),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 18),
@@ -195,8 +241,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                 icon: Icons.inventory_2_outlined,
                 title: isChinese ? '暂无可购买套餐' : 'No plans available',
                 message: isChinese
-                    ? '后台还没有开放可购买套餐。'
-                    : 'No purchasable plans are currently available.',
+                    ? '当前暂时没有可购买的套餐。'
+                    : 'There are no purchasable plans right now.',
               )
             else
               LayoutBuilder(
@@ -350,9 +396,125 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         ),
         if (_message != null) ...[
           const SizedBox(height: 12),
-          _MessageBanner(message: _message!),
+          _MessageBanner(
+            message: _message!,
+            actionLabel: _messageActionLabel,
+            onTap: _messageOnTap,
+          ),
         ],
       ],
+    );
+  }
+
+  Widget _buildOrders(BuildContext context) {
+    final isChinese = _isChinese(context);
+    final ordersFuture = _ordersFuture ??= _loadOrders();
+    return FutureBuilder<List<WebOrderListItemData>>(
+      future: ordersFuture,
+      builder: (context, snapshot) {
+        final cards = <Widget>[
+          WebPageHero(
+            title: isChinese ? '我的订单' : 'My Orders',
+            subtitle: isChinese
+                ? '查看待支付订单和历史订单，也可以继续支付或取消待支付订单。'
+                : 'Review pending and historical orders.',
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _FilterPill(
+                  label: isChinese ? '套餐' : 'Plans',
+                  selected: false,
+                  onTap: _backToCatalog,
+                ),
+                _FilterPill(
+                  label: isChinese ? '我的订单' : 'My Orders',
+                  selected: true,
+                  onTap: _openOrders,
+                ),
+                _FilterPill(
+                  label: isChinese ? '刷新列表' : 'Refresh',
+                  selected: false,
+                  onTap: _reloadOrders,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+        ];
+
+        if (snapshot.hasError) {
+          cards.add(
+            _ErrorState(
+              title: isChinese ? '订单加载失败' : 'Orders failed to load',
+              message: webErrorText(
+                snapshot.error!,
+                isChinese: isChinese,
+                context: WebErrorContext.pageLoad,
+              ),
+              onRetry: _reloadOrders,
+            ),
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: cards,
+          );
+        }
+
+        if (!snapshot.hasData) {
+          cards.add(const _LoadingState());
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: cards,
+          );
+        }
+
+        final orders = snapshot.data ?? const <WebOrderListItemData>[];
+        if (orders.isEmpty) {
+          cards.add(
+            _EmptyPanel(
+              icon: Icons.receipt_long_outlined,
+              title: isChinese ? '还没有订单记录' : 'No orders yet',
+              message: isChinese
+                  ? '你创建过的订单会显示在这里。'
+                  : 'Your orders will appear here.',
+            ),
+          );
+        } else {
+          cards.addAll(
+            orders.map(
+              (order) => Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _OrderListCard(
+                  order: order,
+                  isChinese: isChinese,
+                  isBusy: _busyOrderRef == order.orderRef,
+                  onContinue: order.isPending
+                      ? () => _continueOrder(order)
+                      : null,
+                  onCancel: order.isPending ? () => _cancelOrder(order) : null,
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (_message != null) {
+          cards.add(const SizedBox(height: 8));
+          cards.add(
+            _MessageBanner(
+              message: _message!,
+              actionLabel: _messageActionLabel,
+              onTap: _messageOnTap,
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: cards,
+        );
+      },
     );
   }
 
@@ -379,8 +541,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         _BackHeader(
           title: isChinese ? '订单支付' : 'Order payment',
           subtitle: isChinese
-              ? '选择后台启用的支付方式完成结算。'
-              : 'Choose an enabled payment method to finish checkout.',
+              ? '选择你想使用的支付方式完成结算。'
+              : 'Choose your preferred payment method to complete checkout.',
           label: isChinese ? '返回周期选择' : 'Back',
           onTap: () => setState(() => _stage = _PurchaseStage.orderSetup),
         ),
@@ -506,7 +668,11 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         ),
         if (_message != null) ...[
           const SizedBox(height: 12),
-          _MessageBanner(message: _message!),
+          _MessageBanner(
+            message: _message!,
+            actionLabel: _messageActionLabel,
+            onTap: _messageOnTap,
+          ),
         ],
       ],
     );
@@ -634,7 +800,11 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         ),
         if (_message != null) ...[
           const SizedBox(height: 12),
-          _MessageBanner(message: _message!),
+          _MessageBanner(
+            message: _message!,
+            actionLabel: _messageActionLabel,
+            onTap: _messageOnTap,
+          ),
         ],
       ],
     );
@@ -644,14 +814,64 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     return (widget.plansLoader ?? _loadPlansFromApi)();
   }
 
+  Future<void> _openExistingOrder(
+    String orderRef,
+    WebPlanViewData? fallbackPlan,
+  ) async {
+    setState(() {
+      _isBusy = true;
+      _clearMessage();
+    });
+    try {
+      await _loadCheckoutData(orderRef, fallbackPlan);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = webErrorText(
+          error,
+          isChinese: _isChinese(context),
+          context: WebErrorContext.pageLoad,
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isBusy = false);
+      }
+    }
+  }
+
+  Future<List<WebOrderListItemData>> _loadOrders() {
+    final loader = widget.ordersLoader ?? _loadOrdersFromApi;
+    return loader();
+  }
+
   Future<List<WebPlanViewData>> _loadPlansFromApi() async {
     return _facade.loadPlans();
+  }
+
+  Future<List<WebOrderListItemData>> _loadOrdersFromApi() async {
+    return _facade.loadOrders();
   }
 
   void _reloadPlans() {
     setState(() {
       _plansFuture = _loadPlans();
-      _message = null;
+      _clearMessage();
+    });
+  }
+
+  void _reloadOrders() {
+    setState(() {
+      _ordersFuture = _loadOrders();
+      _clearMessage();
+    });
+  }
+
+  void _openOrders() {
+    setState(() {
+      _stage = _PurchaseStage.orders;
+      _ordersFuture = _loadOrders();
+      _clearMessage();
     });
   }
 
@@ -667,7 +887,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _checkoutAction = null;
       _couponController.clear();
       _couponMessage = null;
-      _message = null;
+      _clearMessage();
       _stage = _PurchaseStage.orderSetup;
     });
   }
@@ -675,11 +895,17 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
   void _backToCatalog() {
     setState(() {
       _stage = _PurchaseStage.catalog;
-      _message = null;
+      _clearMessage();
       _couponMessage = null;
       _checkoutAction = null;
       _isPolling = false;
     });
+  }
+
+  void _clearMessage() {
+    _message = null;
+    _messageActionLabel = null;
+    _messageOnTap = null;
   }
 
   Future<void> _validateCoupon() async {
@@ -736,7 +962,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         : _couponController.text.trim();
     setState(() {
       _isBusy = true;
-      _message = null;
+      _clearMessage();
     });
     try {
       final create = widget.orderCreator ?? _createOrderFromApi;
@@ -751,16 +977,22 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       if (!recovered && mounted) {
         setState(() {
           _message = _isChinese(context)
-              ? '检测到已有待支付订单，请继续支付已有订单或先取消后重试。'
-              : 'A pending order already exists. Continue that order or cancel it first.';
+              ? '检测到已有待支付订单，请前往我的订单继续处理。'
+              : 'A pending order already exists.';
+          _messageActionLabel = _isChinese(context) ? '查看我的订单' : 'Open My Orders';
+          _messageOnTap = widget.onOpenUserOrders ?? _openOrders;
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
-          _message = _isChinese(context)
-              ? '订单创建失败，请确认套餐、周期和优惠券后重试。'
-              : 'Order creation failed. Check the plan, period, and coupon.';
+          _message = webErrorText(
+            error,
+            isChinese: _isChinese(context),
+            context: WebErrorContext.general,
+          );
+          _messageActionLabel = null;
+          _messageOnTap = null;
         });
       }
     } finally {
@@ -816,7 +1048,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
 
   Future<void> _loadCheckoutData(
     String orderRef,
-    WebPlanViewData fallbackPlan,
+    WebPlanViewData? fallbackPlan,
   ) async {
     final detailLoader = widget.orderDetailLoader ?? _loadOrderDetailFromApi;
     final methodsLoader =
@@ -833,7 +1065,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _paymentMethods = methods;
       _selectedPaymentMethod = methods.isEmpty ? null : methods.first;
       _checkoutAction = null;
-      _message = null;
+      _clearMessage();
       _stage = _PurchaseStage.checkout;
     });
   }
@@ -847,6 +1079,81 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
 
   Future<List<WebPaymentMethodData>> _loadPaymentMethodsFromApi() async {
     return _facade.loadPaymentMethods();
+  }
+
+  Future<void> _continueOrder(WebOrderListItemData order) async {
+    if (_busyOrderRef != null) return;
+    setState(() {
+      _busyOrderRef = order.orderRef;
+      _clearMessage();
+    });
+    try {
+      await _loadCheckoutData(order.orderRef, order.plan);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = webErrorText(
+          error,
+          isChinese: _isChinese(context),
+          context: WebErrorContext.pageLoad,
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busyOrderRef = null);
+      }
+    }
+  }
+
+  Future<void> _cancelOrder(WebOrderListItemData order) async {
+    if (_busyOrderRef != null) return;
+    final isChinese = _isChinese(context);
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => _OrderConfirmDialog(
+            title: isChinese ? '取消这个订单？' : 'Cancel this order?',
+            message: isChinese
+                ? '取消后，这笔待支付订单将无法继续支付。'
+                : 'This pending order will no longer be payable.',
+            cancelLabel: isChinese ? '再想想' : 'Keep',
+            confirmLabel: isChinese ? '确认取消' : 'Cancel Order',
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _busyOrderRef = order.orderRef;
+      _clearMessage();
+    });
+    try {
+      final canceler = widget.orderCanceler ?? _cancelOrderFromApi;
+      await canceler(order.orderRef);
+      if (!mounted) return;
+      setState(() {
+        _ordersFuture = _loadOrders();
+        _message = isChinese ? '订单已取消。' : 'Order canceled.';
+        _messageActionLabel = null;
+        _messageOnTap = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = webErrorText(
+          error,
+          isChinese: isChinese,
+          context: WebErrorContext.general,
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busyOrderRef = null);
+      }
+    }
+  }
+
+  Future<void> _cancelOrderFromApi(String orderRef) async {
+    await _facade.cancelOrder(orderRef);
   }
 
   bool _canCheckout(WebOrderDetailData order) {
@@ -863,12 +1170,14 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       setState(() {
         _message =
             _isChinese(context) ? '请选择支付方式。' : 'Select a payment method.';
+        _messageActionLabel = null;
+        _messageOnTap = null;
       });
       return;
     }
     setState(() {
       _isBusy = true;
-      _message = null;
+      _clearMessage();
     });
     try {
       final checkout = widget.orderCheckout ?? _checkoutOrderFromApi;
@@ -879,12 +1188,14 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         _stage = _PurchaseStage.paymentPending;
       });
       await _handleCheckoutAction(action, order.orderRef);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
-          _message = _isChinese(context)
-              ? '结算失败，请稍后重试。'
-              : 'Checkout failed. Try again.';
+          _message = webErrorText(
+            error,
+            isChinese: _isChinese(context),
+            context: WebErrorContext.general,
+          );
         });
       }
     } finally {
@@ -1026,6 +1337,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _order = latest;
       _stage = _PurchaseStage.paymentPending;
       _message = _isChinese(context) ? '订单已完成，订阅状态会自动同步。' : 'Order completed.';
+      _messageActionLabel = null;
+      _messageOnTap = null;
     });
   }
 
@@ -1206,8 +1519,8 @@ class _PlanCard extends StatelessWidget {
           Text(
             plan.deviceLimit == null
                 ? (isChinese
-                    ? '设备数量按后台套餐配置'
-                    : 'Device limit follows panel settings')
+                    ? '设备数量以当前套餐说明为准'
+                    : 'Device availability follows the current plan details')
                 : (isChinese
                     ? '最多支持 ${plan.deviceLimit} 台设备同时在线使用'
                     : 'Up to ${plan.deviceLimit} devices online'),
@@ -1256,6 +1569,8 @@ class _PlanSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasRichContent = plan.richContentHtml.trim().isNotEmpty;
+
     return GradientCard(
       borderRadius: 32,
       padding: const EdgeInsets.all(24),
@@ -1279,38 +1594,46 @@ class _PlanSummaryCard extends StatelessWidget {
                 ),
           ),
           const SizedBox(height: 28),
-          ...plan.features.take(5).map(
-                (feature) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.check_circle_outline_rounded,
-                        color: AppColors.textSecondary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          feature,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: AppColors.textPrimary,
-                                    height: 1.45,
-                                  ),
+          if (hasRichContent)
+            RichContentView(
+              key: Key('web-plan-rich-content-${plan.id}'),
+              html: plan.richContentHtml,
+            )
+          else
+            ...plan.features.take(5).map(
+                  (feature) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.check_circle_outline_rounded,
+                          color: AppColors.textSecondary,
+                          size: 18,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            feature,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: AppColors.textPrimary,
+                                  height: 1.45,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-          const Spacer(),
+          const SizedBox(height: 24),
           Text(
             plan.deviceLimit == null
                 ? (isChinese
-                    ? '设备数量按后台配置'
-                    : 'Device limit follows panel settings')
+                    ? '设备数量以当前套餐说明为准'
+                    : 'Device availability follows the current plan details')
                 : (isChinese
                     ? '最多支持 ${plan.deviceLimit} 台设备同时在线使用'
                     : 'Up to ${plan.deviceLimit} devices online'),
@@ -1489,8 +1812,8 @@ class _PaymentMethodsCard extends StatelessWidget {
               icon: Icons.credit_card_off_outlined,
               title: isChinese ? '暂无可用支付方式' : 'No payment methods',
               message: isChinese
-                  ? '请先在后台启用支付方式，或稍后重试。'
-                  : 'Enable a payment method in the panel first.',
+                  ? '当前暂时没有可用的支付方式，请稍后再试或联系客服。'
+                  : 'There are no payment methods available right now. Please try again later or contact support.',
             )
           else
             ...methods.map(
@@ -1866,10 +2189,137 @@ class _SoftBadge extends StatelessWidget {
   }
 }
 
+class _OrderListCard extends StatelessWidget {
+  const _OrderListCard({
+    required this.order,
+    required this.isChinese,
+    required this.isBusy,
+    this.onContinue,
+    this.onCancel,
+  });
+
+  final WebOrderListItemData order;
+  final bool isChinese;
+  final bool isBusy;
+  final VoidCallback? onContinue;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return GradientCard(
+      borderRadius: 28,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  order.plan?.title ?? (isChinese ? '套餐订单' : 'Order'),
+                  style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                        fontSize: 26,
+                      ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _StatusPill(label: _orderStatusLabel(order.stateCode, isChinese)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 18,
+            runSpacing: 12,
+            children: [
+              _OrderMetaItem(
+                label: isChinese ? '订单号' : 'Order Ref',
+                value: order.orderRef,
+              ),
+              _OrderMetaItem(
+                label: isChinese ? '周期' : 'Period',
+                value: _orderPeriodLabel(order.periodKey, isChinese),
+              ),
+              _OrderMetaItem(
+                label: isChinese ? '金额' : 'Amount',
+                value: '¥${Formatters.formatCurrency(order.amountTotal)}',
+              ),
+              _OrderMetaItem(
+                label: isChinese ? '创建时间' : 'Created',
+                value: Formatters.formatEpoch(order.createdAt),
+              ),
+            ],
+          ),
+          if (order.isPending) ...[
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: _InlineButton(
+                    label: isChinese ? '继续支付' : 'Continue Payment',
+                    isLoading: isBusy,
+                    onTap: onContinue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _InlineButton(
+                    label: isChinese ? '取消订单' : 'Cancel Order',
+                    lowEmphasis: true,
+                    onTap: isBusy ? null : onCancel,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderMetaItem extends StatelessWidget {
+  const _OrderMetaItem({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MessageBanner extends StatelessWidget {
-  const _MessageBanner({required this.message});
+  const _MessageBanner({
+    required this.message,
+    this.actionLabel,
+    this.onTap,
+  });
 
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1887,9 +2337,109 @@ class _MessageBanner extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
+          if (actionLabel != null && onTap != null) ...[
+            const SizedBox(width: 12),
+            _InlineButton(
+              label: actionLabel!,
+              lowEmphasis: true,
+              onTap: onTap,
+            ),
+          ],
         ],
       ),
     );
+  }
+}
+
+class _OrderConfirmDialog extends StatelessWidget {
+  const _OrderConfirmDialog({
+    required this.title,
+    required this.message,
+    required this.cancelLabel,
+    required this.confirmLabel,
+  });
+
+  final String title;
+  final String message;
+  final String cancelLabel;
+  final String confirmLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: GradientCard(
+        borderRadius: 32,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                    fontSize: 30,
+                  ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: _InlineButton(
+                    label: cancelLabel,
+                    lowEmphasis: true,
+                    onTap: () => Navigator.of(context).pop(false),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _InlineButton(
+                    label: confirmLabel,
+                    onTap: () => Navigator.of(context).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _orderPeriodLabel(String key, bool isChinese) {
+  final period = WebPlanPeriod.all.firstWhere(
+    (item) => item.key == key,
+    orElse: () => WebPlanPeriod(
+      key: key,
+      amountField: key,
+      zhLabel: key,
+      enLabel: key,
+      amountCents: 0,
+    ),
+  );
+  return period.label(isChinese);
+}
+
+String _orderStatusLabel(int state, bool isChinese) {
+  switch (state) {
+    case 1:
+    case 3:
+      return isChinese ? '已完成' : 'Completed';
+    case 2:
+      return isChinese ? '已取消' : 'Canceled';
+    case 4:
+      return isChinese ? '已关闭' : 'Closed';
+    default:
+      return isChinese ? '待支付' : 'Pending';
   }
 }
 

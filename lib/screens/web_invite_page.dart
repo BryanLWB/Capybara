@@ -8,6 +8,7 @@ import '../services/app_api.dart';
 import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
+import '../utils/web_error_text.dart';
 import '../widgets/action_button.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
@@ -179,13 +180,15 @@ class _WebInvitePageState extends State<WebInvitePage> {
 
     if (!mounted) return;
     if (config.closed) {
-      _showSnack(
-          isChinese ? '后台当前已关闭佣金提现。' : 'Withdrawal is currently closed.');
+      _showSnack(isChinese
+          ? '当前暂未开放佣金提现，请稍后再试。'
+          : 'Commission withdrawal is not available right now.');
       return;
     }
     if (config.methods.isEmpty) {
-      _showSnack(
-          isChinese ? '后台还没有配置提现方式。' : 'No withdrawal method is configured.');
+      _showSnack(isChinese
+          ? '当前暂未提供提现方式，请联系客服协助。'
+          : 'No withdrawal method is available right now. Please contact support.');
       return;
     }
 
@@ -230,7 +233,15 @@ class _WebInvitePageState extends State<WebInvitePage> {
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(error.toString())),
+      SnackBar(
+        content: Text(
+          webErrorText(
+            error,
+            isChinese: isChinese,
+            context: WebErrorContext.general,
+          ),
+        ),
+      ),
     );
   }
 
@@ -284,7 +295,11 @@ class _WebInvitePageState extends State<WebInvitePage> {
           }
           return _InviteErrorState(
             isChinese: isChinese,
-            message: '$error',
+            message: webErrorText(
+              error ?? StateError('invite.load.failed'),
+              isChinese: isChinese,
+              context: WebErrorContext.pageLoad,
+            ),
             onReload: _reload,
           );
         }

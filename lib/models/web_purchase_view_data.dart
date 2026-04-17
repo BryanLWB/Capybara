@@ -1,4 +1,5 @@
 import '../utils/formatters.dart';
+import '../utils/rich_content_utils.dart';
 
 enum WebPlanFilter { all, recurring, onetime }
 
@@ -20,6 +21,7 @@ class WebPlanViewData {
     required this.id,
     required this.title,
     required this.summary,
+    this.richContentHtml = '',
     required this.transferBytes,
     required this.periods,
     required this.features,
@@ -30,6 +32,7 @@ class WebPlanViewData {
   final int id;
   final String title;
   final String summary;
+  final String richContentHtml;
   final int transferBytes;
   final List<WebPlanPeriod> periods;
   final List<String> features;
@@ -57,13 +60,15 @@ class WebPlanViewData {
       if (amount == null || amount <= 0) continue;
       periods.add(definition.withAmount(amount));
     }
-    final summary = _cleanText(json['summary']?.toString() ?? '');
+    final richContent = buildRichContentData(json['summary']?.toString() ?? '');
+    final summary = _cleanText(richContent.plainText);
     return WebPlanViewData(
       id: _toInt(json['plan_id']),
       title: json['title']?.toString() ?? 'Plan',
       summary: summary.isEmpty
           ? '包含流量 ${Formatters.formatBytes(_toInt(json['transfer_bytes']))}'
           : summary,
+      richContentHtml: richContent.html,
       transferBytes: _toInt(json['transfer_bytes']),
       periods: periods,
       features: _featuresFromSummary(summary),
@@ -257,6 +262,43 @@ class WebOrderDetailData {
   }
 }
 
+class WebOrderListItemData {
+  WebOrderListItemData({
+    required this.orderRef,
+    required this.stateCode,
+    required this.periodKey,
+    required this.amountTotal,
+    required this.createdAt,
+    required this.updatedAt,
+    this.plan,
+  });
+
+  final String orderRef;
+  final int stateCode;
+  final String periodKey;
+  final int amountTotal;
+  final int createdAt;
+  final int updatedAt;
+  final WebPlanViewData? plan;
+
+  bool get isPending => stateCode == 0;
+
+  factory WebOrderListItemData.fromJson(Map<String, dynamic> json) {
+    final planJson = json['plan'];
+    return WebOrderListItemData(
+      orderRef: json['order_ref']?.toString() ?? '',
+      stateCode: _toInt(json['state_code']),
+      periodKey: json['period_key']?.toString() ?? '',
+      amountTotal: _toInt(json['amount_total']),
+      createdAt: _toInt(json['created_at']),
+      updatedAt: _toInt(json['updated_at']),
+      plan: planJson is Map
+          ? WebPlanViewData.fromJson(Map<String, dynamic>.from(planJson))
+          : null,
+    );
+  }
+}
+
 class WebCheckoutActionData {
   WebCheckoutActionData({
     required this.kind,
@@ -301,11 +343,18 @@ extension WebCheckoutActionKindX on WebCheckoutActionKind {
 
 String _cleanText(String value) {
   return value
-      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-      .replaceAll(RegExp(r'</p>', caseSensitive: false), '\n')
-      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '')
+      .replaceAll(RegExp(r'^\s*[-*+]\s+', multiLine: true), '')
+      .replaceAll(RegExp(r'^\s*\d+\.\s+', multiLine: true), '')
+      .replaceAll('**', '')
+      .replaceAll('__', '')
+      .replaceAll('`', '')
+      .replaceAll(RegExp(r'!\[([^\]]*)\]\(([^)]+)\)'), r'$1')
+      .replaceAll(RegExp(r'\[([^\]]+)\]\(([^)]+)\)'), r'$1')
       .replaceAll('&nbsp;', ' ')
       .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
       .trim();
 }
 
