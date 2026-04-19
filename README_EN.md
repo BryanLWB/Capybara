@@ -10,9 +10,9 @@
 
 Change one API URL → Build → Get Your Branded App
 
-[![Stars](https://img.shields.io/github/stars/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/stargazers)
-[![Forks](https://img.shields.io/github/forks/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/network/members)
-[![License](https://img.shields.io/github/license/BryanLWB/flux?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/BryanLWB/Capybara?style=flat-square&logo=github)](https://github.com/BryanLWB/Capybara/stargazers)
+[![Forks](https://img.shields.io/github/forks/BryanLWB/Capybara?style=flat-square&logo=github)](https://github.com/BryanLWB/Capybara/network/members)
+[![License](https://img.shields.io/github/license/BryanLWB/Capybara?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
 💬 Replace with your community link · 📞 Replace with your business contact
@@ -101,8 +101,8 @@ Powered by **SingBox + V2Ray** Dual Core.
 
 ```bash
 # 1. Clone
-git clone https://github.com/BryanLWB/flux.git
-cd flux
+git clone https://github.com/BryanLWB/Capybara.git
+cd Capybara
 
 # 2. Install dependencies
 flutter pub get

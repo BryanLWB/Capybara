@@ -10,9 +10,9 @@
 
 改一行 API 地址 → 编译 → 拥有专属品牌 App
 
-[![Stars](https://img.shields.io/github/stars/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/stargazers)
-[![Forks](https://img.shields.io/github/forks/BryanLWB/flux?style=flat-square&logo=github)](https://github.com/BryanLWB/flux/network/members)
-[![License](https://img.shields.io/github/license/BryanLWB/flux?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/BryanLWB/Capybara?style=flat-square&logo=github)](https://github.com/BryanLWB/Capybara/stargazers)
+[![Forks](https://img.shields.io/github/forks/BryanLWB/Capybara?style=flat-square&logo=github)](https://github.com/BryanLWB/Capybara/network/members)
+[![License](https://img.shields.io/github/license/BryanLWB/Capybara?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
 💬 请替换为你的社区入口 · 📞 请替换为你的商务联系方式
@@ -101,8 +101,8 @@ Capybara 采用 **SingBox + V2Ray** 双核驱动，支持市面主流协议：
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/BryanLWB/flux.git
-cd flux
+git clone https://github.com/BryanLWB/Capybara.git
+cd Capybara
 
 # 2. 安装依赖
 flutter pub get
