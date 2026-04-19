@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/web_client_import_option.dart';
 import '../models/web_client_download.dart';
 import '../models/web_home_view_data.dart';
 import '../models/web_shell_section.dart';
@@ -19,12 +20,16 @@ import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
 import '../widgets/rich_content_view.dart';
+import '../widgets/web_layout_metrics.dart';
+import '../widgets/web_page_frame.dart';
 
 typedef WebHomeDataLoader = Future<WebHomeViewData> Function(bool forceRefresh);
 typedef WebSubscriptionAccessLinkCreator = Future<String> Function(
     String? flag);
 typedef WebClientDownloadsLoader = Future<List<WebClientDownloadItem>>
     Function();
+typedef WebClientImportOptionsLoader = Future<List<WebClientImportOptionData>>
+    Function(String platform);
 
 class WebHomePage extends StatefulWidget {
   const WebHomePage({
@@ -34,6 +39,7 @@ class WebHomePage extends StatefulWidget {
     this.dataLoader,
     this.subscriptionLinkCreator,
     this.downloadsLoader,
+    this.importOptionsLoader,
   });
 
   final ValueChanged<WebShellSection> onNavigate;
@@ -41,6 +47,7 @@ class WebHomePage extends StatefulWidget {
   final WebHomeDataLoader? dataLoader;
   final WebSubscriptionAccessLinkCreator? subscriptionLinkCreator;
   final WebClientDownloadsLoader? downloadsLoader;
+  final WebClientImportOptionsLoader? importOptionsLoader;
 
   @override
   State<WebHomePage> createState() => _WebHomePageState();
@@ -51,6 +58,9 @@ class _WebHomePageState extends State<WebHomePage> {
   late Future<WebHomeViewData> _future;
   String _selectedPlatform = 'ios';
   bool _quickActionBusy = false;
+  final Map<String, Future<List<WebClientImportOptionData>>>
+      _importOptionsFutures =
+      <String, Future<List<WebClientImportOptionData>>>{};
   Timer? _noticeTimer;
   int _noticeIndex = 0;
   int _noticeCount = 0;
@@ -104,6 +114,15 @@ class _WebHomePageState extends State<WebHomePage> {
       return widget.downloadsLoader!();
     }
     return _facade.loadClientDownloads();
+  }
+
+  Future<List<WebClientImportOptionData>> _loadImportOptions(
+    String platform,
+  ) async {
+    if (widget.importOptionsLoader != null) {
+      return widget.importOptionsLoader!(platform);
+    }
+    return _facade.loadClientImportOptions(platform);
   }
 
   Future<void> _copySubscriptionLink(
@@ -223,6 +242,55 @@ class _WebHomePageState extends State<WebHomePage> {
     }
   }
 
+  Future<void> _openClientImport(
+    WebClientImportOptionData option,
+    bool isChinese, {
+    required bool hasSubscription,
+  }) async {
+    if (_quickActionBusy) return;
+    if (!hasSubscription) {
+      _showSnack(isChinese ? '开通套餐后即可使用导入功能。' : 'Subscription unavailable.');
+      return;
+    }
+    if (!option.supported || option.actionValue.isEmpty) {
+      _showSnack(
+        isChinese
+            ? '当前客户端暂未提供导入入口，请先使用订阅链接。'
+            : 'This client import option is not available right now.',
+      );
+      return;
+    }
+
+    setState(() => _quickActionBusy = true);
+    try {
+      if (option.isDeepLink) {
+        final uri = Uri.tryParse(option.actionValue);
+        if (uri == null || !uri.hasScheme) {
+          throw StateError('client.import.deep_link.invalid');
+        }
+        final opened = await launchUrl(uri, webOnlyWindowName: '_blank');
+        if (!opened && mounted) {
+          _showSnack(
+            isChinese ? '无法打开导入入口。' : 'Unable to open the import action.',
+          );
+        }
+      } else {
+        await Clipboard.setData(ClipboardData(text: option.actionValue));
+        if (mounted) {
+          _showSnack(
+            isChinese
+                ? '${option.displayName} 导入链接已复制。'
+                : '${option.displayName} import link copied.',
+          );
+        }
+      }
+    } catch (error) {
+      _handleQuickActionError(error, isChinese);
+    } finally {
+      if (mounted) setState(() => _quickActionBusy = false);
+    }
+  }
+
   void _handleQuickActionError(Object error, bool isChinese) {
     if (error is AppApiException &&
         (error.statusCode == 401 || error.statusCode == 403)) {
@@ -248,7 +316,8 @@ class _WebHomePageState extends State<WebHomePage> {
   void _syncNoticeRotation(List<WebNoticeViewData> notices) {
     final count = notices.length;
     final signature = notices
-        .map((notice) => '${notice.id}:${notice.createdAt}:${notice.title}:${notice.body}')
+        .map((notice) =>
+            '${notice.id}:${notice.createdAt}:${notice.title}:${notice.body}')
         .join('|');
     if (_noticeCount == count && _noticeSignature == signature) {
       return;
@@ -352,76 +421,76 @@ class _WebHomePageState extends State<WebHomePage> {
         final data = snapshot.data!;
         _syncNoticeRotation(data.notices);
         final width = MediaQuery.of(context).size.width;
-        final isWide = width >= 1180;
-        final isMedium = width >= 900;
-        const desktopPanelHeight = 560.0;
+        final isWide = WebLayoutMetrics.useWidePanels(width);
+        final isMedium = WebLayoutMetrics.useMediumGrid(width);
+        final compact = WebLayoutMetrics.compact(width);
+        final desktopPanelHeight = width >= 1360
+            ? 508.0
+            : width >= 1120
+                ? 470.0
+                : 444.0;
 
         return RefreshIndicator(
           onRefresh: () async {
             setState(() {
               _future = _load(true);
+              _importOptionsFutures.clear();
             });
             await _future;
           },
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              isWide ? 24 : 16,
-              16,
-              isWide ? 24 : 16,
-              88,
-            ),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1440),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildNoticeCard(context, data, isChinese),
-                    const SizedBox(height: 16),
-                    _buildSubscriptionCard(context, data, isChinese),
-                    const SizedBox(height: 16),
-                    if (isWide)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: desktopPanelHeight,
-                              child: _buildQuickUsageSection(
-                                context,
-                                isChinese,
-                                hasSubscription: data.hasSubscription,
-                                dense: true,
-                              ),
-                            ),
+          child: WebPageFrame(
+            maxWidth: 1520,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildNoticeCard(context, data, isChinese),
+                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+                _buildSubscriptionCard(context, data, isChinese),
+                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+                if (isWide)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: desktopPanelHeight,
+                          child: _buildQuickUsageSection(
+                            context,
+                            isChinese,
+                            hasSubscription: data.hasSubscription,
+                            dense: true,
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: SizedBox(
-                              height: desktopPanelHeight,
-                              child: _buildQuickLinksSection(
-                                context,
-                                isChinese,
-                                true,
-                                dense: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    else ...[
-                      _buildQuickUsageSection(
-                        context,
-                        isChinese,
-                        hasSubscription: data.hasSubscription,
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                      _buildQuickLinksSection(context, isChinese, isMedium),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: SizedBox(
+                          height: desktopPanelHeight,
+                          child: _buildQuickLinksSection(
+                            context,
+                            isChinese,
+                            true,
+                            dense: true,
+                          ),
+                        ),
+                      ),
                     ],
-                  ],
-                ),
-              ),
+                  )
+                else ...[
+                  _buildQuickUsageSection(
+                    context,
+                    isChinese,
+                    hasSubscription: data.hasSubscription,
+                    dense: compact,
+                  ),
+                  SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+                  _buildQuickLinksSection(
+                    context,
+                    isChinese,
+                    isMedium,
+                  ),
+                ],
+              ],
             ),
           ),
         );
@@ -484,9 +553,16 @@ class _WebHomePageState extends State<WebHomePage> {
     bool isChinese,
   ) {
     final currentNotice = data.currentNoticeAt(_noticeIndex);
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
+    final mediumDesktop = WebLayoutMetrics.mediumDesktop(width);
 
     return GradientCard(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(mediumDesktop
+          ? 14
+          : compact
+              ? 18
+              : 20),
       borderRadius: 28,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -502,15 +578,18 @@ class _WebHomePageState extends State<WebHomePage> {
                       icon: Icons.campaign_rounded,
                       text: isChinese ? '公告' : 'Announcements',
                     ),
-                    const SizedBox(height: 10),
-                  Text(
-                      isChinese
-                          ? '点击公告即可查看完整内容。'
-                          : 'Tap an announcement to view the full message.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                    ),
+                    if (!mediumDesktop) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        isChinese
+                            ? '点击公告即可查看完整内容。'
+                            : 'Tap an announcement to view the full message.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: mediumDesktop ? 13 : null,
+                            ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -522,7 +601,7 @@ class _WebHomePageState extends State<WebHomePage> {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: mediumDesktop ? 10 : 16),
           if (currentNotice == null)
             _buildEmptyCard(
               context,
@@ -536,7 +615,7 @@ class _WebHomePageState extends State<WebHomePage> {
             AnimatedCard(
               key: Key('web-home-notice-card-${currentNotice.id}'),
               onTap: () => _openNoticeDialog(currentNotice, isChinese),
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(mediumDesktop ? 14 : 20),
               enableBreathing: false,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -561,7 +640,7 @@ class _WebHomePageState extends State<WebHomePage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: mediumDesktop ? 10 : 16),
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 260),
                     switchInCurve: Curves.easeOutCubic,
@@ -571,24 +650,33 @@ class _WebHomePageState extends State<WebHomePage> {
                       currentNotice.title.isEmpty
                           ? (isChinese ? '系统公告' : 'System Announcement')
                           : currentNotice.title,
-                      maxLines: 2,
+                      maxLines: mediumDesktop ? 1 : 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                            fontSize: 28,
-                            height: 1.1,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.displayMedium?.copyWith(
+                                fontSize: mediumDesktop
+                                    ? 20
+                                    : compact
+                                        ? 24
+                                        : 28,
+                                height: 1.1,
+                              ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    isChinese ? '点击查看公告详情' : 'Tap to read the full announcement',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                        ),
-                  ),
+                  if (!mediumDesktop) ...[
+                    SizedBox(height: mediumDesktop ? 6 : 12),
+                    Text(
+                      isChinese
+                          ? '点击查看公告详情'
+                          : 'Tap to read the full announcement',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: mediumDesktop ? 12.5 : 14,
+                          ),
+                    ),
+                  ],
                   if (data.notices.length > 1) ...[
-                    const SizedBox(height: 16),
+                    SizedBox(height: mediumDesktop ? 10 : 16),
                     Center(
                       child: Wrap(
                         spacing: 8,
@@ -598,7 +686,8 @@ class _WebHomePageState extends State<WebHomePage> {
                           data.notices.length,
                           (index) => _NoticeDot(
                             key: Key('web-home-notice-dot-$index'),
-                            active: index == (_noticeIndex % data.notices.length),
+                            active:
+                                index == (_noticeIndex % data.notices.length),
                             onTap: () => _selectNotice(index),
                           ),
                         ),
@@ -618,8 +707,15 @@ class _WebHomePageState extends State<WebHomePage> {
     WebHomeViewData data,
     bool isChinese,
   ) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
+    final mediumDesktop = WebLayoutMetrics.mediumDesktop(width);
     return GradientCard(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(mediumDesktop
+          ? 14
+          : compact
+              ? 18
+              : 20),
       borderRadius: 28,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -639,7 +735,7 @@ class _WebHomePageState extends State<WebHomePage> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: mediumDesktop ? 10 : 16),
           if (!data.hasSubscription)
             _InteractiveSubscriptionPlaceholder(
               title: isChinese ? '你还没有有效订阅' : 'No active subscription',
@@ -668,10 +764,10 @@ class _WebHomePageState extends State<WebHomePage> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: compact ? 12 : 14),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(mediumDesktop ? 12 : 16),
               decoration: BoxDecoration(
                 color: AppColors.surfaceAlt.withValues(alpha: 0.62),
                 borderRadius: BorderRadius.circular(18),
@@ -683,10 +779,10 @@ class _WebHomePageState extends State<WebHomePage> {
                   Text(
                     isChinese ? '流量使用' : 'Traffic Usage',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontSize: 16,
+                          fontSize: mediumDesktop ? 14 : 16,
                         ),
                   ),
-                  const SizedBox(height: 10),
+                  SizedBox(height: mediumDesktop ? 6 : 10),
                   LinearProgressIndicator(
                     minHeight: 10,
                     value: data.usagePercent,
@@ -694,7 +790,7 @@ class _WebHomePageState extends State<WebHomePage> {
                     valueColor: const AlwaysStoppedAnimation(AppColors.accent),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  const SizedBox(height: 10),
+                  SizedBox(height: mediumDesktop ? 6 : 10),
                   Text(
                     '${Formatters.formatBytes(data.usedBytes)} / ${Formatters.formatBytes(data.totalBytes)}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -704,7 +800,7 @@ class _WebHomePageState extends State<WebHomePage> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: mediumDesktop ? 8 : 12),
             Row(
               children: [
                 Expanded(
@@ -722,7 +818,7 @@ class _WebHomePageState extends State<WebHomePage> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: mediumDesktop ? 6 : 10),
             Row(
               children: [
                 Expanded(
@@ -754,6 +850,9 @@ class _WebHomePageState extends State<WebHomePage> {
     required bool hasSubscription,
     bool dense = false,
   }) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = dense || WebLayoutMetrics.compact(width);
+    final mediumDesktop = WebLayoutMetrics.mediumDesktop(width);
     final platformButtons = [
       const _PlatformOption(keyName: 'ios', label: 'iOS'),
       const _PlatformOption(keyName: 'android', label: 'Android'),
@@ -802,9 +901,17 @@ class _WebHomePageState extends State<WebHomePage> {
         ),
       ),
     ];
+    final importOptionsFuture = hasSubscription
+        ? (_importOptionsFutures[_selectedPlatform] ??=
+            _loadImportOptions(_selectedPlatform))
+        : null;
 
     return GradientCard(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(mediumDesktop
+          ? 14
+          : compact
+              ? 18
+              : 20),
       borderRadius: 28,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -820,9 +927,15 @@ class _WebHomePageState extends State<WebHomePage> {
                 : 'Choose a platform, then download, copy, or import by QR.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
+                  fontSize: mediumDesktop ? 13 : null,
                 ),
           ),
-          SizedBox(height: dense ? 10 : 14),
+          SizedBox(
+              height: mediumDesktop
+                  ? 6
+                  : compact
+                      ? 10
+                      : 14),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -832,30 +945,110 @@ class _WebHomePageState extends State<WebHomePage> {
                     label: platform.label,
                     selected: _selectedPlatform == platform.keyName,
                     onTap: () {
-                      setState(() => _selectedPlatform = platform.keyName);
+                      setState(() {
+                        _selectedPlatform = platform.keyName;
+                        _importOptionsFutures.remove(platform.keyName);
+                      });
                     },
                   ),
                 )
                 .toList(),
           ),
-          SizedBox(height: dense ? 10 : 14),
+          SizedBox(
+              height: mediumDesktop
+                  ? 6
+                  : compact
+                      ? 10
+                      : 14),
           Column(
             children: actions
                 .map(
                   (action) => Padding(
-                    padding: EdgeInsets.only(bottom: dense ? 6 : 10),
+                    padding: EdgeInsets.only(bottom: compact ? 6 : 10),
                     child: _UsageActionTile(
                       title: action.title,
                       subtitle: action.subtitle,
                       icon: action.icon,
                       statusLabel: action.statusLabel,
                       onTap: _quickActionBusy ? null : action.onTap,
-                      dense: dense,
+                      dense: compact,
                     ),
                   ),
                 )
                 .toList(),
           ),
+          SizedBox(
+              height: mediumDesktop
+                  ? 6
+                  : compact
+                      ? 10
+                      : 14),
+          _SectionLabel(
+            icon: Icons.rocket_launch_outlined,
+            text: isChinese ? '一键导入' : 'Client Import',
+          ),
+          const SizedBox(height: 10),
+          if (!hasSubscription)
+            _QuickUsageHintCard(
+              icon: Icons.lock_outline_rounded,
+              message: isChinese
+                  ? '开通套餐后，即可查看当前平台支持的一键导入客户端。'
+                  : 'Activate a plan to unlock one-click client import.',
+            )
+          else
+            FutureBuilder<List<WebClientImportOptionData>>(
+              future: importOptionsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return _QuickUsageHintCard(
+                    icon: Icons.error_outline_rounded,
+                    message: webErrorText(
+                      snapshot.error!,
+                      isChinese: isChinese,
+                      context: WebErrorContext.quickAction,
+                    ),
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: CapybaraLoader(size: 22),
+                  );
+                }
+
+                final options =
+                    snapshot.data ?? const <WebClientImportOptionData>[];
+                if (options.isEmpty) {
+                  return _QuickUsageHintCard(
+                    icon: Icons.info_outline_rounded,
+                    message: isChinese
+                        ? '当前平台暂未提供专用导入入口，你仍可使用订阅链接导入。'
+                        : 'No dedicated client import is available for this platform yet.',
+                  );
+                }
+
+                return Column(
+                  children: options
+                      .map(
+                        (option) => Padding(
+                          padding: EdgeInsets.only(bottom: compact ? 6 : 10),
+                          child: _ImportOptionTile(
+                            option: option,
+                            isChinese: isChinese,
+                            onTap: _quickActionBusy
+                                ? null
+                                : () => _openClientImport(
+                                      option,
+                                      isChinese,
+                                      hasSubscription: hasSubscription,
+                                    ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -889,15 +1082,15 @@ class _WebHomePageState extends State<WebHomePage> {
       ),
       _QuickLinkCardData(
         section: WebShellSection.account,
-        title: isChinese ? '账号设置' : 'Account',
+        title: isChinese ? '用户中心' : 'User Center',
         subtitle: isChinese
-            ? '管理余额、通知与账户安全设置。'
-            : 'Manage balance, notifications, and account security.',
+            ? '管理余额、通知、订单与账户安全设置。'
+            : 'Manage balance, notifications, orders, and account security.',
       ),
     ];
 
     return GradientCard(
-      padding: EdgeInsets.all(dense ? 18 : 20),
+      padding: EdgeInsets.all(dense ? 16 : 18),
       borderRadius: 28,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -906,7 +1099,7 @@ class _WebHomePageState extends State<WebHomePage> {
             icon: Icons.dashboard_customize_outlined,
             text: isChinese ? '快捷入口' : 'Shortcuts',
           ),
-          SizedBox(height: dense ? 12 : 14),
+          SizedBox(height: dense ? 10 : 12),
           if (dense)
             Expanded(
               child: LayoutBuilder(
@@ -914,8 +1107,8 @@ class _WebHomePageState extends State<WebHomePage> {
                   final rowSpacing = 12.0;
                   final cardHeight = isMedium
                       ? ((constraints.maxHeight - rowSpacing) / 2)
-                          .clamp(170.0, 260.0)
-                      : 154.0;
+                          .clamp(152.0, 220.0)
+                      : 140.0;
 
                   return _buildQuickLinksGrid(
                     context,
@@ -932,7 +1125,7 @@ class _WebHomePageState extends State<WebHomePage> {
               cards: cards,
               isMedium: isMedium,
               shrinkWrap: true,
-              mainAxisExtent: isMedium ? 196 : 154,
+              mainAxisExtent: isMedium ? 172 : 140,
             ),
         ],
       ),
@@ -946,6 +1139,9 @@ class _WebHomePageState extends State<WebHomePage> {
     required double mainAxisExtent,
     bool shrinkWrap = false,
   }) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
+    final mediumDesktop = WebLayoutMetrics.mediumDesktop(width);
     return GridView.builder(
       shrinkWrap: shrinkWrap,
       physics: const NeverScrollableScrollPhysics(),
@@ -960,7 +1156,11 @@ class _WebHomePageState extends State<WebHomePage> {
         final card = cards[index];
         return AnimatedCard(
           onTap: () => widget.onNavigate(card.section),
-          padding: const EdgeInsets.all(18),
+          padding: EdgeInsets.all(mediumDesktop
+              ? 14
+              : compact
+                  ? 16
+                  : 18),
           enableBreathing: false,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -969,8 +1169,16 @@ class _WebHomePageState extends State<WebHomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 42,
-                    height: 42,
+                    width: mediumDesktop
+                        ? 36
+                        : compact
+                            ? 38
+                            : 42,
+                    height: mediumDesktop
+                        ? 36
+                        : compact
+                            ? 38
+                            : 42,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
                       color: AppColors.accent.withValues(alpha: 0.14),
@@ -978,7 +1186,7 @@ class _WebHomePageState extends State<WebHomePage> {
                     child: Icon(
                       card.section.icon,
                       color: AppColors.accent,
-                      size: 20,
+                      size: mediumDesktop ? 18 : 20,
                     ),
                   ),
                   const Spacer(),
@@ -992,13 +1200,22 @@ class _WebHomePageState extends State<WebHomePage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
+              SizedBox(
+                  height: mediumDesktop
+                      ? 12
+                      : compact
+                          ? 14
+                          : 18),
               Text(
                 card.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 17,
+                      fontSize: mediumDesktop
+                          ? 15
+                          : compact
+                              ? 16
+                              : 17,
                     ),
               ),
               const SizedBox(height: 8),
@@ -1011,6 +1228,7 @@ class _WebHomePageState extends State<WebHomePage> {
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           height: 1.4,
+                          fontSize: mediumDesktop ? 12.5 : null,
                         ),
                   ),
                 ),
@@ -1064,14 +1282,21 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
+    final mediumDesktop = WebLayoutMetrics.mediumDesktop(width);
     return Row(
       children: [
-        Icon(icon, size: 18, color: AppColors.accent),
+        Icon(icon, size: mediumDesktop ? 16 : 18, color: AppColors.accent),
         const SizedBox(width: 8),
         Text(
           text,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontSize: 20,
+                fontSize: mediumDesktop
+                    ? 17
+                    : compact
+                        ? 18
+                        : 20,
               ),
         ),
       ],
@@ -1090,10 +1315,20 @@ class _CountBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mediumDesktop =
+        WebLayoutMetrics.mediumDesktop(MediaQuery.of(context).size.width);
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 10 : 12,
-        vertical: compact ? 6 : 8,
+        horizontal: mediumDesktop
+            ? 10
+            : compact
+                ? 10
+                : 12,
+        vertical: mediumDesktop
+            ? 5
+            : compact
+                ? 6
+                : 8,
       ),
       decoration: BoxDecoration(
         color: AppColors.accent.withValues(alpha: 0.14),
@@ -1107,7 +1342,11 @@ class _CountBadge extends StatelessWidget {
         style: TextStyle(
           color: AppColors.textPrimary,
           fontWeight: FontWeight.w700,
-          fontSize: compact ? 11 : 12,
+          fontSize: mediumDesktop
+              ? 10.5
+              : compact
+                  ? 11
+                  : 12,
         ),
       ),
     );
@@ -1176,7 +1415,7 @@ class _NoticeDetailDialog extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Expanded(
-                  child: SingleChildScrollView(
+                child: SingleChildScrollView(
                   child: notice.bodyHtml.isEmpty
                       ? Text(
                           notice.body.isEmpty
@@ -1184,10 +1423,11 @@ class _NoticeDetailDialog extends StatelessWidget {
                                   ? '这条公告暂时没有更多内容。'
                                   : 'No more details are available for this announcement.')
                               : notice.body,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textPrimary,
-                                height: 1.65,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textPrimary,
+                                    height: 1.65,
+                                  ),
                         )
                       : RichContentView(html: notice.bodyHtml),
                 ),
@@ -1255,18 +1495,20 @@ class _InteractiveSubscriptionPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final mediumDesktop = WebLayoutMetrics.mediumDesktop(width);
     return AnimatedCard(
       key: const Key('web-subscription-empty-card'),
       onTap: onTap,
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(mediumDesktop ? 14 : 20),
       enableBreathing: false,
       child: Row(
         children: [
           Container(
-            width: 52,
-            height: 52,
+            width: mediumDesktop ? 46 : 52,
+            height: mediumDesktop ? 46 : 52,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(mediumDesktop ? 16 : 18),
               color: AppColors.accent.withValues(alpha: 0.14),
             ),
             child: const Icon(
@@ -1274,20 +1516,25 @@ class _InteractiveSubscriptionPlaceholder extends StatelessWidget {
               color: AppColors.accent,
             ),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: mediumDesktop ? 12 : 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: mediumDesktop ? 16 : null,
+                      ),
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: mediumDesktop ? 4 : 6),
                 Text(
                   subtitle,
+                  maxLines: mediumDesktop ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppColors.textSecondary,
+                        fontSize: mediumDesktop ? 13 : null,
                       ),
                 ),
               ],
@@ -1315,8 +1562,10 @@ class _MetricPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mediumDesktop =
+        WebLayoutMetrics.mediumDesktop(MediaQuery.of(context).size.width);
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(mediumDesktop ? 12 : 14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: AppColors.surfaceAlt.withValues(alpha: 0.6),
@@ -1333,13 +1582,13 @@ class _MetricPill extends StatelessWidget {
                   fontSize: 12,
                 ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: mediumDesktop ? 6 : 8),
           Text(
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontSize: 16,
+                  fontSize: mediumDesktop ? 15 : 16,
                 ),
           ),
         ],
@@ -1361,13 +1610,18 @@ class _PlatformGhostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mediumDesktop =
+        WebLayoutMetrics.mediumDesktop(MediaQuery.of(context).size.width);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: EdgeInsets.symmetric(
+            horizontal: mediumDesktop ? 12 : 14,
+            vertical: mediumDesktop ? 8 : 10,
+          ),
           decoration: BoxDecoration(
             color: selected
                 ? AppColors.accent.withValues(alpha: 0.16)
@@ -1385,6 +1639,7 @@ class _PlatformGhostButton extends StatelessWidget {
                   color:
                       selected ? AppColors.textPrimary : AppColors.textPrimary,
                   fontWeight: FontWeight.w700,
+                  fontSize: mediumDesktop ? 13 : null,
                 ),
           ),
         ),
@@ -1530,9 +1785,135 @@ class _UsageActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mediumDesktop =
+        WebLayoutMetrics.mediumDesktop(MediaQuery.of(context).size.width);
     return AnimatedCard(
       width: double.infinity,
-      padding: EdgeInsets.all(dense ? 10 : 14),
+      padding: EdgeInsets.all(
+        mediumDesktop
+            ? 8
+            : dense
+                ? 10
+                : 14,
+      ),
+      onTap: onTap,
+      enableBreathing: false,
+      borderRadius: 18,
+      hoverScale: 1.01,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: mediumDesktop ? 38 : 42,
+            height: mediumDesktop ? 38 : 42,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: AppColors.accent.withValues(alpha: 0.14),
+            ),
+            child: Icon(icon,
+                size: mediumDesktop ? 18 : 20, color: AppColors.accent),
+          ),
+          SizedBox(width: mediumDesktop ? 10 : 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontSize: mediumDesktop ? 15 : 16,
+                      ),
+                ),
+                SizedBox(
+                    height: mediumDesktop
+                        ? 3
+                        : dense
+                            ? 4
+                            : 6),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        height: 1.4,
+                        color: AppColors.textSecondary,
+                        fontSize: mediumDesktop ? 12.5 : null,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: mediumDesktop ? 10 : 12),
+          _CountBadge(label: statusLabel, compact: true),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickUsageHintCard extends StatelessWidget {
+  const _QuickUsageHintCard({
+    required this.icon,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.45,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportOptionTile extends StatelessWidget {
+  const _ImportOptionTile({
+    required this.option,
+    required this.isChinese,
+    required this.onTap,
+  });
+
+  final WebClientImportOptionData option;
+  final bool isChinese;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = _clientImportIcon(option.clientKey);
+    final hint = option.protocolHint?.trim();
+    final actionLabel = option.isDeepLink
+        ? (isChinese ? '立即导入' : 'Import Now')
+        : (isChinese ? '复制链接' : 'Copy Link');
+
+    return AnimatedCard(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
       onTap: onTap,
       enableBreathing: false,
       borderRadius: 18,
@@ -1555,16 +1936,20 @@ class _UsageActionTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  option.displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontSize: 16,
                       ),
                 ),
-                SizedBox(height: dense ? 4 : 6),
+                const SizedBox(height: 6),
                 Text(
-                  subtitle,
+                  hint == null || hint.isEmpty
+                      ? (isChinese
+                          ? '为当前平台准备的客户端导入入口。'
+                          : 'Client import option for this platform.')
+                      : (isChinese ? '适用协议：$hint' : 'Protocol: $hint'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1576,10 +1961,29 @@ class _UsageActionTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          _CountBadge(label: statusLabel, compact: true),
+          _CountBadge(label: actionLabel, compact: true),
         ],
       ),
     );
+  }
+}
+
+IconData _clientImportIcon(String clientKey) {
+  switch (clientKey) {
+    case 'clash':
+      return Icons.flash_on_rounded;
+    case 'hiddify':
+      return Icons.public_rounded;
+    case 'sing_box':
+      return Icons.graphic_eq_rounded;
+    case 'shadowrocket':
+      return Icons.rocket_launch_rounded;
+    case 'quantumult_x':
+      return Icons.all_inclusive_rounded;
+    case 'surge':
+      return Icons.bolt_rounded;
+    default:
+      return Icons.open_in_browser_rounded;
   }
 }
 

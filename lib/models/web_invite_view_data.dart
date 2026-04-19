@@ -3,11 +3,19 @@ class WebInviteViewData {
     required this.codes,
     required this.metrics,
     required this.records,
+    this.page = 1,
+    this.pageSize = 10,
+    this.total = 0,
+    this.hasMore = false,
   });
 
   final List<WebInviteCodeData> codes;
   final WebInviteMetricsData metrics;
   final List<WebInviteRecordData> records;
+  final int page;
+  final int pageSize;
+  final int total;
+  final bool hasMore;
 
   WebInviteCodeData? get primaryCode {
     for (final code in codes) {
@@ -40,12 +48,19 @@ class WebInviteViewData {
             ))
         .toList();
 
+    final page = _toInt(recordsData['page']);
+    final pageSize = _toInt(recordsData['page_size']);
+
     return WebInviteViewData(
       codes: codes,
       metrics: WebInviteMetricsData.fromMap(
         Map<String, dynamic>.from(overviewData['metrics'] as Map? ?? const {}),
       ),
       records: recordItems,
+      page: page <= 0 ? 1 : page,
+      pageSize: pageSize <= 0 ? 10 : pageSize,
+      total: _toInt(recordsData['total']),
+      hasMore: _toBool(recordsData['has_more']),
     );
   }
 }
@@ -136,4 +151,17 @@ int _toInt(Object? value) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value) ?? 0;
   return 0;
+}
+
+bool _toBool(Object? value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    return normalized == '1' ||
+        normalized == 'true' ||
+        normalized == 'yes' ||
+        normalized == 'on';
+  }
+  return false;
 }

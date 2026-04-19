@@ -13,9 +13,14 @@ import '../widgets/action_button.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
+import '../widgets/web_layout_metrics.dart';
 import '../widgets/web_page_frame.dart';
 
 typedef WebInviteDataLoader = Future<WebInviteViewData> Function();
+typedef WebInvitePagedDataLoader = Future<WebInviteViewData> Function({
+  required int page,
+  required int pageSize,
+});
 typedef WebInviteCodeCreator = Future<void> Function();
 typedef WebInviteBalanceTransfer = Future<void> Function(int amountCents);
 typedef WebInviteWithdrawConfigLoader = Future<WebWithdrawConfig> Function();
@@ -28,6 +33,7 @@ class WebInvitePage extends StatefulWidget {
   const WebInvitePage({
     super.key,
     this.dataLoader,
+    this.pagedDataLoader,
     this.codeCreator,
     this.balanceTransfer,
     this.withdrawConfigLoader,
@@ -36,6 +42,7 @@ class WebInvitePage extends StatefulWidget {
   });
 
   final WebInviteDataLoader? dataLoader;
+  final WebInvitePagedDataLoader? pagedDataLoader;
   final WebInviteCodeCreator? codeCreator;
   final WebInviteBalanceTransfer? balanceTransfer;
   final WebInviteWithdrawConfigLoader? withdrawConfigLoader;
@@ -47,11 +54,14 @@ class WebInvitePage extends StatefulWidget {
 }
 
 class _WebInvitePageState extends State<WebInvitePage> {
+  static const int _recordsPageSize = 10;
+
   final _facade = WebAppFacade();
   Future<WebInviteViewData>? _future;
   bool _isGeneratingCode = false;
   bool _isTransferring = false;
   bool _isWithdrawing = false;
+  int _recordsPage = 1;
 
   @override
   void initState() {
@@ -65,11 +75,20 @@ class _WebInvitePageState extends State<WebInvitePage> {
           );
 
   Future<WebInviteViewData> _loadData() async {
+    if (widget.pagedDataLoader != null) {
+      return widget.pagedDataLoader!(
+        page: _recordsPage,
+        pageSize: _recordsPageSize,
+      );
+    }
     if (widget.dataLoader != null) {
       return widget.dataLoader!();
     }
 
-    return _facade.loadInviteData();
+    return _facade.loadInviteData(
+      page: _recordsPage,
+      pageSize: _recordsPageSize,
+    );
   }
 
   Future<void> _createInviteCode(bool isChinese) async {
@@ -112,9 +131,9 @@ class _WebInvitePageState extends State<WebInvitePage> {
 
   Future<void> _transferToBalance(
     WebInviteViewData data,
-    bool isChinese,
-  ) async {
-    final amount = data.metrics.withdrawableAmount;
+    bool isChinese, {
+    required int amount,
+  }) async {
     if (amount <= 0 || _isTransferring) return;
 
     final confirmed = await showDialog<bool>(
@@ -153,6 +172,39 @@ class _WebInvitePageState extends State<WebInvitePage> {
     } finally {
       if (mounted) setState(() => _isTransferring = false);
     }
+  }
+
+  Future<void> _transferAllToBalance(
+    WebInviteViewData data,
+    bool isChinese,
+  ) {
+    return _transferToBalance(
+      data,
+      isChinese,
+      amount: data.metrics.withdrawableAmount,
+    );
+  }
+
+  Future<void> _transferCustomAmount(
+    WebInviteViewData data,
+    bool isChinese,
+  ) async {
+    final available = data.metrics.withdrawableAmount;
+    if (available <= 0) {
+      _showSnack(isChinese ? '当前没有可转入的佣金。' : 'No commission available.');
+      return;
+    }
+
+    final amount = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => _TransferAmountDialog(
+        isChinese: isChinese,
+        maxAmountCents: available,
+        moneyFormatter: _money,
+      ),
+    );
+    if (amount == null || !mounted) return;
+    await _transferToBalance(data, isChinese, amount: amount);
   }
 
   Future<void> _requestWithdrawal(
@@ -264,6 +316,14 @@ class _WebInvitePageState extends State<WebInvitePage> {
     });
   }
 
+  void _changeRecordsPage(int page) {
+    if (page <= 0 || page == _recordsPage) return;
+    setState(() {
+      _recordsPage = page;
+      _future = _loadData();
+    });
+  }
+
   String _inviteUrl(String code) {
     final base = Uri.base;
     final origin = base.hasScheme && base.host.isNotEmpty
@@ -319,8 +379,11 @@ class _WebInvitePageState extends State<WebInvitePage> {
           onCopyInvite: (inviteUrl) =>
               _copyInvite(context, isChinese, inviteUrl),
           onCreateCode: () => _createInviteCode(isChinese),
-          onTransfer: () => _transferToBalance(snapshot.data!, isChinese),
+          onTransferAll: () => _transferAllToBalance(snapshot.data!, isChinese),
+          onTransferCustom: () =>
+              _transferCustomAmount(snapshot.data!, isChinese),
           onWithdraw: () => _requestWithdrawal(snapshot.data!, isChinese),
+          onRecordsPageChanged: _changeRecordsPage,
         );
       },
     );
@@ -338,8 +401,10 @@ class _InviteContent extends StatelessWidget {
     required this.moneyFormatter,
     required this.onCopyInvite,
     required this.onCreateCode,
-    required this.onTransfer,
+    required this.onTransferAll,
+    required this.onTransferCustom,
     required this.onWithdraw,
+    required this.onRecordsPageChanged,
   });
 
   final WebInviteViewData data;
@@ -351,12 +416,15 @@ class _InviteContent extends StatelessWidget {
   final String Function(int cents) moneyFormatter;
   final ValueChanged<String> onCopyInvite;
   final VoidCallback onCreateCode;
-  final VoidCallback onTransfer;
+  final VoidCallback onTransferAll;
+  final VoidCallback onTransferCustom;
   final VoidCallback onWithdraw;
+  final ValueChanged<int> onRecordsPageChanged;
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width >= 1080;
+    final width = MediaQuery.of(context).size.width;
+    final wide = WebLayoutMetrics.useWideProfileRow(width);
     final primaryCode = data.primaryCode;
     final inviteUrl =
         primaryCode == null ? '' : inviteUrlBuilder(primaryCode.code);
@@ -367,7 +435,7 @@ class _InviteContent extends StatelessWidget {
         children: [
           GradientCard(
             borderRadius: 32,
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(WebLayoutMetrics.cardPadding(width)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -388,10 +456,13 @@ class _InviteContent extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
-                Row(
+                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
                   children: [
-                    Expanded(
+                    SizedBox(
+                      width: wide ? 260 : double.infinity,
                       child: SizedBox(
                         key: const Key('web-invite-withdraw-button'),
                         child: ActionButton(
@@ -402,19 +473,33 @@ class _InviteContent extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
+                    SizedBox(
+                      width: wide ? 260 : double.infinity,
                       child: _TransferButton(
+                        cardKey: const Key('web-invite-transfer-button'),
                         enabled: data.metrics.withdrawableAmount > 0 &&
                             !isTransferring,
                         isLoading: isTransferring,
-                        label: isChinese ? '转为余额' : 'Transfer to Balance',
-                        onTap: onTransfer,
+                        icon: Icons.input_rounded,
+                        label: isChinese ? '一键全部转入' : 'Transfer All',
+                        onTap: onTransferAll,
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide ? 260 : double.infinity,
+                      child: _TransferButton(
+                        cardKey: const Key('web-invite-transfer-custom-button'),
+                        enabled: data.metrics.withdrawableAmount > 0 &&
+                            !isTransferring,
+                        isLoading: false,
+                        icon: Icons.tune_rounded,
+                        label: isChinese ? '自定义金额转入' : 'Custom Transfer',
+                        onTap: onTransferCustom,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: width >= 860 ? 24 : 20),
                 _InviteCodePanel(
                   isChinese: isChinese,
                   primaryCode: primaryCode,
@@ -433,7 +518,12 @@ class _InviteContent extends StatelessWidget {
           _CommissionRecordsCard(
             isChinese: isChinese,
             records: data.records,
+            page: data.page,
+            pageSize: data.pageSize,
+            total: data.total,
+            hasMore: data.hasMore,
             moneyFormatter: moneyFormatter,
+            onPageChanged: onRecordsPageChanged,
           ),
         ],
       ),
@@ -564,12 +654,22 @@ class _CommissionRecordsCard extends StatelessWidget {
   const _CommissionRecordsCard({
     required this.isChinese,
     required this.records,
+    required this.page,
+    required this.pageSize,
+    required this.total,
+    required this.hasMore,
     required this.moneyFormatter,
+    required this.onPageChanged,
   });
 
   final bool isChinese;
   final List<WebInviteRecordData> records;
+  final int page;
+  final int pageSize;
+  final int total;
+  final bool hasMore;
   final String Function(int cents) moneyFormatter;
+  final ValueChanged<int> onPageChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -589,7 +689,9 @@ class _CommissionRecordsCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                isChinese ? '每页显示数量：10' : 'Rows per page: 10',
+                isChinese
+                    ? '第 $page 页 / 共 ${_totalPages(total, pageSize)} 页'
+                    : 'Page $page / ${_totalPages(total, pageSize)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -646,6 +748,25 @@ class _CommissionRecordsCard extends StatelessWidget {
                 ),
               ),
             ),
+          if (records.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PageButton(
+                  label: isChinese ? '上一页' : 'Previous',
+                  enabled: page > 1,
+                  onTap: () => onPageChanged(page - 1),
+                ),
+                const SizedBox(width: 10),
+                _PageButton(
+                  label: isChinese ? '下一页' : 'Next',
+                  enabled: hasMore,
+                  onTap: () => onPageChanged(page + 1),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -696,14 +817,18 @@ class _CommissionRecordRow extends StatelessWidget {
 
 class _TransferButton extends StatelessWidget {
   const _TransferButton({
+    this.cardKey,
     required this.enabled,
     required this.isLoading,
+    required this.icon,
     required this.label,
     required this.onTap,
   });
 
+  final Key? cardKey;
   final bool enabled;
   final bool isLoading;
+  final IconData icon;
   final String label;
   final VoidCallback onTap;
 
@@ -713,7 +838,7 @@ class _TransferButton extends StatelessWidget {
         ? AppColors.textPrimary
         : AppColors.textSecondary.withValues(alpha: 0.56);
     return AnimatedCard(
-      key: const Key('web-invite-transfer-button'),
+      key: cardKey,
       onTap: enabled ? onTap : null,
       enableBreathing: false,
       borderRadius: 18,
@@ -740,7 +865,7 @@ class _TransferButton extends StatelessWidget {
               )
             else
               Icon(
-                Icons.swap_horiz_rounded,
+                icon,
                 size: 18,
                 color: enabled ? AppColors.accent : foreground,
               ),
@@ -754,6 +879,156 @@ class _TransferButton extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PageButton extends StatelessWidget {
+  const _PageButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DialogCardButton(
+      label: label,
+      emphasized: false,
+      onTap: enabled ? onTap : null,
+    );
+  }
+}
+
+class _TransferAmountDialog extends StatefulWidget {
+  const _TransferAmountDialog({
+    required this.isChinese,
+    required this.maxAmountCents,
+    required this.moneyFormatter,
+  });
+
+  final bool isChinese;
+  final int maxAmountCents;
+  final String Function(int cents) moneyFormatter;
+
+  @override
+  State<_TransferAmountDialog> createState() => _TransferAmountDialogState();
+}
+
+class _TransferAmountDialogState extends State<_TransferAmountDialog> {
+  final TextEditingController _controller = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final amount = _parseAmountToCents(_controller.text);
+    if (amount == null || amount <= 0) {
+      setState(() {
+        _error = widget.isChinese ? '请输入正确金额。' : 'Enter a valid amount.';
+      });
+      return;
+    }
+    if (amount > widget.maxAmountCents) {
+      setState(() {
+        _error = widget.isChinese
+            ? '输入金额超出可转范围。'
+            : 'The amount exceeds the available commission.';
+      });
+      return;
+    }
+    Navigator.of(context).pop(amount);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isChinese = widget.isChinese;
+    return Dialog(
+      key: const Key('web-invite-transfer-amount-dialog'),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: GradientCard(
+          borderRadius: 34,
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isChinese ? '自定义转入金额' : 'Custom Transfer Amount',
+                style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                      fontSize: 34,
+                      height: 1.1,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                isChinese
+                    ? '当前最多可转入 ${widget.moneyFormatter(widget.maxAmountCents)}。'
+                    : 'You can transfer up to ${widget.moneyFormatter(widget.maxAmountCents)}.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.45,
+                    ),
+              ),
+              const SizedBox(height: 22),
+              TextField(
+                key: const Key('web-invite-transfer-amount-input'),
+                controller: _controller,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onSubmitted: (_) => _submit(),
+                decoration: InputDecoration(
+                  labelText: isChinese ? '输入金额' : 'Amount',
+                  hintText:
+                      isChinese ? '例如 10 或 10.50' : 'For example 10 or 10.50',
+                  errorText: _error,
+                  prefixText: '¥ ',
+                  filled: true,
+                  fillColor: AppColors.surfaceAlt.withValues(alpha: 0.72),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: _DialogCardButton(
+                      label: isChinese ? '取消' : 'Cancel',
+                      emphasized: false,
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _DialogCardButton(
+                      key: const Key(
+                          'web-invite-transfer-amount-confirm-button'),
+                      label: isChinese ? '确认转入' : 'Transfer',
+                      emphasized: true,
+                      onTap: _submit,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1088,7 +1363,7 @@ class _DialogCardButton extends StatelessWidget {
 
   final String label;
   final bool emphasized;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1248,4 +1523,17 @@ class _InviteErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+int _totalPages(int total, int pageSize) {
+  if (total <= 0 || pageSize <= 0) return 1;
+  return ((total + pageSize - 1) / pageSize).ceil();
+}
+
+int? _parseAmountToCents(String raw) {
+  final normalized = raw.trim().replaceAll(',', '');
+  if (normalized.isEmpty) return null;
+  final value = double.tryParse(normalized);
+  if (value == null || value <= 0) return null;
+  return (value * 100).round();
 }

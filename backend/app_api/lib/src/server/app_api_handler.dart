@@ -160,6 +160,7 @@ class _AppApiService {
     _router.get('/api/app/v1/client/config', _clientConfig);
     _router.get('/api/app/v1/client/version', _clientVersion);
     _router.get('/api/app/v1/client/downloads', _clientDownloads);
+    _router.get('/api/app/v1/client/import-options', _clientImportOptions);
 
     _router.all('/<ignored|.*>', (Request request) {
       return _error('route.not_found', 'Request failed', HttpStatus.notFound);
@@ -294,9 +295,46 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final configData = await upstreamApi.fetchUserConfig(_toAuth(session));
+      final auth = _toAuth(session);
+      final configData = await upstreamApi.fetchUserConfig(auth);
+      final profileData = await upstreamApi.fetchUserProfile(auth);
+      final config = Map<String, dynamic>.from(
+        configData['data'] as Map? ?? const {},
+      );
+      final profile = Map<String, dynamic>.from(
+        profileData['data'] as Map? ?? const {},
+      );
+      String? telegramBindUrl;
+      String? telegramBindCommand;
+      if (_toBool(config['is_telegram']) && !_toBool(profile['telegram_id'])) {
+        try {
+          final botInfo = await upstreamApi.fetchTelegramBotInfo(auth);
+          final username = _trimmedOrNull(botInfo['data'] is Map
+              ? (botInfo['data'] as Map)['username']
+              : null);
+          final subscribeSummary =
+              await upstreamApi.fetchSubscriptionSummary(auth);
+          final subscribeUrl = _trimmedOrNull(
+            subscribeSummary['data'] is Map
+                ? (subscribeSummary['data'] as Map)['subscribe_url']
+                : null,
+          );
+          if (username != null) {
+            telegramBindUrl = 'https://t.me/$username';
+          }
+          if (subscribeUrl != null) {
+            telegramBindCommand = '/bind $subscribeUrl';
+          }
+        } catch (_) {
+          // Keep profile rendering available even when telegram bot details fail.
+        }
+      }
       return _ok(<String, dynamic>{
-        'config': _mapUserConfig(configData['data'] as Map? ?? const {}),
+        'config': _mapUserConfig(
+          config,
+          telegramBindUrl: telegramBindUrl,
+          telegramBindCommand: telegramBindCommand,
+        ),
       });
     });
   }
@@ -400,10 +438,16 @@ class _AppApiService {
           HttpStatus.badRequest,
         );
       }
+      final accessContext = await _subscriptionAccessContext(auth);
       await upstreamApi.resetSubscriptionSecurity(auth);
+      final generation =
+          await sessionStore.bumpSubscriptionGeneration(accessContext.ownerKey);
+      await sessionStore.revokeSubscriptionAccesses(accessContext.ownerKey);
       final access = await sessionStore.createSubscriptionAccess(
         upstreamToken: session.upstreamToken,
         upstreamAuth: session.upstreamAuth,
+        ownerKey: accessContext.ownerKey,
+        generation: generation,
         ttl: _subscriptionAccessTtl,
       );
       return _ok(<String, dynamic>{
@@ -424,7 +468,8 @@ class _AppApiService {
     }
     final body = await _jsonBody(request);
     return _withUpstreamGuard(() async {
-      final summary = await upstreamApi.fetchSubscriptionSummary(_toAuth(session));
+      final auth = _toAuth(session);
+      final summary = await upstreamApi.fetchSubscriptionSummary(auth);
       if (!_hasUsableSubscription(summary['data'])) {
         return _error(
           'subscription.required',
@@ -432,10 +477,13 @@ class _AppApiService {
           HttpStatus.badRequest,
         );
       }
+      final accessContext = await _subscriptionAccessContext(auth);
       final flag = _trimmedOrNull(body['flag']);
       final access = await sessionStore.createSubscriptionAccess(
         upstreamToken: session.upstreamToken,
         upstreamAuth: session.upstreamAuth,
+        ownerKey: accessContext.ownerKey,
+        generation: accessContext.generation,
         flag: flag,
         ttl: _subscriptionAccessTtl,
       );
@@ -454,6 +502,23 @@ class _AppApiService {
   ) async {
     final record = await sessionStore.readSubscriptionAccess(accessId.trim());
     if (record == null) {
+      return _error(
+        'subscription.unavailable',
+        'Request failed',
+        HttpStatus.notFound,
+      );
+    }
+    if (record.ownerKey.trim().isEmpty) {
+      return _error(
+        'subscription.unavailable',
+        'Request failed',
+        HttpStatus.notFound,
+      );
+    }
+    final generation = await sessionStore.readSubscriptionGeneration(
+      record.ownerKey,
+    );
+    if (record.generation != generation) {
       return _error(
         'subscription.unavailable',
         'Request failed',
@@ -745,10 +810,29 @@ class _AppApiService {
       return _error(
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
+    final page = int.tryParse(request.url.queryParameters['page'] ?? '')
+            ?.clamp(1, 9999) ??
+        1;
+    final pageSizeRaw =
+        int.tryParse(request.url.queryParameters['page_size'] ?? '') ?? 10;
+    final pageSize = pageSizeRaw.clamp(10, 100);
     return _withUpstreamGuard(() async {
-      final records = await upstreamApi.fetchInviteRecords(_toAuth(session));
+      final records = await upstreamApi.fetchInviteRecords(
+        _toAuth(session),
+        page: page,
+        pageSize: pageSize,
+      );
+      final rawItems = (records['data'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => _mapInviteRecord(Map<String, dynamic>.from(item)))
+          .toList();
+      final total = _toNum(records['total']).toInt();
       return _ok(<String, dynamic>{
-        'items': records.map(_mapInviteRecord).toList(),
+        'items': rawItems,
+        'page': page,
+        'page_size': pageSize,
+        'total': total,
+        'has_more': page * pageSize < total,
       });
     });
   }
@@ -782,6 +866,25 @@ class _AppApiService {
     }
     return _withUpstreamGuard(() async {
       final auth = _toAuth(session);
+      final overview = await upstreamApi.fetchInviteOverview(auth);
+      final available = _toNum(
+        _mapInviteMetrics((overview['data'] as Map? ?? const {})['stat'])[
+            'withdrawable_amount'],
+      ).toInt();
+      if (available <= 0) {
+        return _error(
+          'referrals.no_withdrawable_commission',
+          'Request failed',
+          HttpStatus.badRequest,
+        );
+      }
+      if (amountCents > available) {
+        return _error(
+          'referrals.transfer_amount_invalid',
+          'Request failed',
+          HttpStatus.badRequest,
+        );
+      }
       await upstreamApi.transferCommissionToBalance(
         auth,
         amountCents: amountCents,
@@ -791,13 +894,15 @@ class _AppApiService {
         upstreamApi.fetchInviteOverview(auth),
       ]);
       final profile = responses[0]['data'] as Map? ?? const {};
-      final overview = responses[1]['data'] as Map? ?? const {};
+      final refreshedOverview = responses[1]['data'] as Map? ?? const {};
       return _ok(<String, dynamic>{
         'transferred': true,
         'account': _mapAccount(profile),
         'referrals': <String, dynamic>{
-          'codes': _mapInviteCodes(overview['codes'] as List? ?? const []),
-          'metrics': _mapInviteMetrics(overview['stat']),
+          'codes': _mapInviteCodes(
+            refreshedOverview['codes'] as List? ?? const [],
+          ),
+          'metrics': _mapInviteMetrics(refreshedOverview['stat']),
         },
       });
     }, operation: 'referrals.transfer');
@@ -999,6 +1104,39 @@ class _AppApiService {
     });
   }
 
+  Future<Response> _clientImportOptions(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+        'auth.required',
+        'Authentication required',
+        HttpStatus.unauthorized,
+      );
+    }
+    final platform =
+        _normalizePlatform(request.url.queryParameters['platform']);
+    if (platform == null) {
+      return _error('request.invalid', 'Request failed', HttpStatus.badRequest);
+    }
+    return _withUpstreamGuard(() async {
+      final auth = _toAuth(session);
+      final summary = await upstreamApi.fetchSubscriptionSummary(auth);
+      if (!_hasUsableSubscription(summary['data'])) {
+        return _error(
+          'subscription.required',
+          'Request failed',
+          HttpStatus.badRequest,
+        );
+      }
+      final options = await _buildClientImportOptions(
+        request,
+        session: session,
+        platform: platform,
+      );
+      return _ok(<String, dynamic>{'items': options});
+    });
+  }
+
   Future<Response> _withUpstreamGuard(
     Future<Response> Function() action, {
     String? operation,
@@ -1034,12 +1172,6 @@ class _AppApiService {
       throw const FormatException('expected a json object');
     }
     return decoded;
-  }
-
-  String? _trimmedOrNull(Object? raw) {
-    final value = raw?.toString().trim();
-    if (value == null || value.isEmpty) return null;
-    return value;
   }
 
   Future<SessionRecord?> _requireSession(Request request) async {
@@ -1083,6 +1215,7 @@ class _AppApiService {
       'expiry_at': raw['expired_at'] ?? 0,
       'remind_expire': _toBool(raw['remind_expire']),
       'remind_traffic': _toBool(raw['remind_traffic']),
+      'telegram_bound': _trimmedOrNull(raw['telegram_id']) != null,
       'avatar_url': raw['avatar_url'],
       'user_ref': raw['uuid'],
     };
@@ -1105,7 +1238,7 @@ class _AppApiService {
       'plan_id': raw['id'] ?? 0,
       'title': raw['name'] ?? 'Plan',
       'summary': raw['content'],
-      'transfer_bytes': _toNum(raw['transfer_enable']).toInt(),
+      'transfer_bytes': _normalizePlanTransferBytes(raw['transfer_enable']),
       'monthly_amount': raw['month_price'],
       'quarterly_amount': raw['quarter_price'],
       'half_year_amount': raw['half_year_price'],
@@ -1215,11 +1348,16 @@ class _AppApiService {
 
   Map<String, dynamic> _mapOrder(Map<String, dynamic> raw) {
     final plan = raw['plan'];
+    final amounts = _mapNormalizedOrderAmounts(
+      raw,
+      plan is Map ? Map<String, dynamic>.from(plan) : null,
+    );
     return <String, dynamic>{
       'order_ref': raw['trade_no'] ?? '',
       'state_code': raw['status'] ?? 0,
       'period_key': raw['period'] ?? '',
       'amount_total': raw['total_amount'] ?? 0,
+      ...amounts,
       'created_at': raw['created_at'] ?? 0,
       'updated_at': raw['updated_at'] ?? 0,
       'plan': plan is Map ? _mapPlan(Map<String, dynamic>.from(plan)) : null,
@@ -1229,19 +1367,15 @@ class _AppApiService {
   Map<String, dynamic> _mapOrderDetail(Map raw) {
     final plan = raw['plan'];
     final payment = raw['payment'];
-    final total = _toNum(raw['total_amount']).toInt();
-    final handling = _toNum(raw['handling_amount']).toInt();
+    final amounts = _mapNormalizedOrderAmounts(
+      raw,
+      plan is Map ? Map<String, dynamic>.from(plan) : null,
+    );
     return <String, dynamic>{
       'order_ref': raw['trade_no'] ?? '',
       'state_code': raw['status'] ?? 0,
       'period_key': raw['period'] ?? '',
-      'amount_total': total,
-      'amount_payable': total + handling,
-      'amount_discount': raw['discount_amount'] ?? 0,
-      'amount_balance': raw['balance_amount'] ?? 0,
-      'amount_refund': raw['refund_amount'] ?? 0,
-      'amount_surplus': raw['surplus_amount'] ?? 0,
-      'amount_handling': handling,
+      ...amounts,
       'created_at': raw['created_at'] ?? 0,
       'updated_at': raw['updated_at'] ?? 0,
       'plan': plan is Map ? _mapPlan(Map<String, dynamic>.from(plan)) : null,
@@ -1327,7 +1461,8 @@ class _AppApiService {
     return <String, dynamic>{
       ..._mapTicket(raw),
       'body': firstMessage['body']?.toString() ?? '',
-      'messages': rawMessages.length > 1 ? rawMessages.skip(1).toList() : const [],
+      'messages':
+          rawMessages.length > 1 ? rawMessages.skip(1).toList() : const [],
     };
   }
 
@@ -1366,12 +1501,10 @@ class _AppApiService {
 
   Future<bool> _hasPendingOrderConflict(
     UpstreamAuth auth,
-    UpstreamException error,
-    {
+    UpstreamException error, {
     required int planId,
     String? periodKey,
-  }
-  ) async {
+  }) async {
     if (error.statusCode != HttpStatus.badRequest) {
       return false;
     }
@@ -1382,7 +1515,8 @@ class _AppApiService {
           return false;
         }
         final orderPlan = item['plan'];
-        final orderPlanId = orderPlan is Map ? _toNum(orderPlan['id']).toInt() : 0;
+        final orderPlanId =
+            orderPlan is Map ? _toNum(orderPlan['id']).toInt() : 0;
         if (planId > 0 && orderPlanId > 0 && planId != orderPlanId) {
           return false;
         }
@@ -1410,6 +1544,90 @@ class _AppApiService {
     return subscribeUrl.isNotEmpty && totalBytes > 0;
   }
 
+  int _normalizePlanTransferBytes(Object? rawValue) {
+    final value = _toNum(rawValue).toInt();
+    if (value <= 0) {
+      return 0;
+    }
+    if (value < 1024 * 1024) {
+      return value * 1024 * 1024 * 1024;
+    }
+    return value;
+  }
+
+  Map<String, dynamic> _mapNormalizedOrderAmounts(
+    Map raw,
+    Map<String, dynamic>? rawPlan,
+  ) {
+    final dueBeforeFee = _toNum(raw['total_amount']).toInt();
+    final handling = _toNum(raw['handling_amount']).toInt();
+    final discount = _toNum(raw['discount_amount']).toInt();
+    final balance = _toNum(raw['balance_amount']).toInt();
+    final surplus = _toNum(raw['surplus_amount']).toInt();
+    final refund = _toNum(raw['refund_amount']).toInt();
+    final original = _resolveOriginalOrderAmount(
+      rawPlan,
+      raw['period']?.toString(),
+      dueBeforeFee: dueBeforeFee,
+      discountApplied: discount,
+      balanceUsed: balance,
+    );
+    return <String, dynamic>{
+      'amount_total': dueBeforeFee,
+      'amount_payable': dueBeforeFee + handling,
+      'amount_discount': discount,
+      'amount_balance': balance,
+      'amount_refund': refund,
+      'amount_surplus': surplus,
+      'amount_handling': handling,
+      'amount_original': original,
+      'amount_due_before_fee': dueBeforeFee,
+      'amount_due_after_fee': dueBeforeFee + handling,
+      'amount_discount_applied': discount,
+      'amount_balance_used': balance,
+      'amount_surplus_credit': surplus,
+      'amount_refund_value': refund,
+    };
+  }
+
+  int _resolveOriginalOrderAmount(
+    Map<String, dynamic>? rawPlan,
+    String? periodKey, {
+    required int dueBeforeFee,
+    required int discountApplied,
+    required int balanceUsed,
+  }) {
+    final periodAmount = _resolveOrderPeriodAmount(rawPlan, periodKey);
+    if (periodAmount > 0) {
+      return periodAmount;
+    }
+    return dueBeforeFee + discountApplied + balanceUsed;
+  }
+
+  int _resolveOrderPeriodAmount(
+    Map<String, dynamic>? rawPlan,
+    String? periodKey,
+  ) {
+    if (rawPlan == null) {
+      return 0;
+    }
+    final field = switch (periodKey?.trim()) {
+      'month_price' => 'month_price',
+      'quarter_price' => 'quarter_price',
+      'half_year_price' => 'half_year_price',
+      'year_price' => 'year_price',
+      'two_year_price' => 'two_year_price',
+      'three_year_price' => 'three_year_price',
+      'onetime_price' => 'onetime_price',
+      'reset_price' => 'reset_price',
+      _ => null,
+    };
+    if (field == null) {
+      return 0;
+    }
+    return _toNum(rawPlan[field]).toInt();
+  }
+
   Map<String, dynamic> _mapGuestConfig(Map raw) {
     return <String, dynamic>{
       'tos_link': raw['tos_url'],
@@ -1428,10 +1646,16 @@ class _AppApiService {
     };
   }
 
-  Map<String, dynamic> _mapUserConfig(Map raw) {
+  Map<String, dynamic> _mapUserConfig(
+    Map raw, {
+    String? telegramBindUrl,
+    String? telegramBindCommand,
+  }) {
     return <String, dynamic>{
       'telegram_enabled': raw['is_telegram'] ?? 0,
       'telegram_discuss_link': raw['telegram_discuss_link'],
+      'telegram_bind_url': telegramBindUrl,
+      'telegram_bind_command': telegramBindCommand,
       'stripe_publishable_key': raw['stripe_pk'],
       'payout_methods': raw['withdraw_methods'] ?? const [],
       'payout_closed': raw['withdraw_close'] ?? 0,
@@ -1495,12 +1719,199 @@ class _AppApiService {
     };
   }
 
+  String? _normalizePlatform(String? raw) {
+    final value = raw?.trim().toLowerCase();
+    switch (value) {
+      case 'ios':
+      case 'android':
+      case 'macos':
+      case 'windows':
+        return value;
+      default:
+        return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _buildClientImportOptions(
+    Request request, {
+    required SessionRecord session,
+    required String platform,
+  }) async {
+    final label = Uri.encodeComponent('Capybara');
+    final accessUrlCache = <String, Future<String>>{};
+    final accessContext = await _subscriptionAccessContext(_toAuth(session));
+
+    Future<String> accessUrlFor(String flag) async {
+      return accessUrlCache.putIfAbsent(flag, () async {
+        final access = await sessionStore.createSubscriptionAccess(
+          upstreamToken: session.upstreamToken,
+          upstreamAuth: session.upstreamAuth,
+          ownerKey: accessContext.ownerKey,
+          generation: accessContext.generation,
+          flag: flag,
+          ttl: _subscriptionAccessTtl,
+        );
+        return _subscriptionAccessUrl(request, access.id);
+      });
+    }
+
+    Future<Map<String, dynamic>> build({
+      required String clientKey,
+      required String displayName,
+      required String actionType,
+      required String protocolHint,
+      required Future<String> Function() actionValue,
+    }) async {
+      return <String, dynamic>{
+        'client_key': clientKey,
+        'display_name': displayName,
+        'icon_url': '',
+        'supported': true,
+        'action_type': actionType,
+        'action_value': await actionValue(),
+        'protocol_hint': protocolHint,
+      };
+    }
+
+    switch (platform) {
+      case 'ios':
+        final shadowrocketUrl = await accessUrlFor('shadowrocket');
+        final shadowrocketEncoded = base64.encode(utf8.encode(shadowrocketUrl));
+        final quantumultUrl = await accessUrlFor('shadowrocket');
+        return <Map<String, dynamic>>[
+          await build(
+            clientKey: 'shadowrocket',
+            displayName: 'Shadowrocket',
+            actionType: 'deep_link',
+            protocolHint: 'shadowrocket',
+            actionValue: () async =>
+                'shadowrocket://add/sub://$shadowrocketEncoded?remark=$label',
+          ),
+          await build(
+            clientKey: 'quantumult_x',
+            displayName: 'Quantumult X',
+            actionType: 'copy_link',
+            protocolHint: 'quantumult-x',
+            actionValue: () async => quantumultUrl,
+          ),
+        ];
+      case 'android':
+        final clashUrl =
+            Uri.encodeComponent(await accessUrlFor('clashmetaforandroid'));
+        final hiddifyUrl = await accessUrlFor('hiddify');
+        final singBoxUrl = Uri.encodeComponent(await accessUrlFor('sing-box'));
+        return <Map<String, dynamic>>[
+          await build(
+            clientKey: 'clash',
+            displayName: 'Clash',
+            actionType: 'deep_link',
+            protocolHint: 'clash',
+            actionValue: () async =>
+                'clash://install-config?url=$clashUrl&name=$label',
+          ),
+          await build(
+            clientKey: 'hiddify',
+            displayName: 'Hiddify',
+            actionType: 'deep_link',
+            protocolHint: 'hiddify',
+            actionValue: () async => 'hiddify://import/$hiddifyUrl#$label',
+          ),
+          await build(
+            clientKey: 'sing_box',
+            displayName: 'sing-box',
+            actionType: 'deep_link',
+            protocolHint: 'sing-box',
+            actionValue: () async =>
+                'sing-box://import-remote-profile?url=$singBoxUrl#$label',
+          ),
+        ];
+      case 'macos':
+        final clashUrl = await accessUrlFor('clash');
+        final singBoxUrl = await accessUrlFor('sing-box');
+        final surgeUrl = await accessUrlFor('clash');
+        return <Map<String, dynamic>>[
+          await build(
+            clientKey: 'clash',
+            displayName: 'Clash',
+            actionType: 'copy_link',
+            protocolHint: 'clash',
+            actionValue: () async => clashUrl,
+          ),
+          await build(
+            clientKey: 'sing_box',
+            displayName: 'sing-box',
+            actionType: 'deep_link',
+            protocolHint: 'sing-box',
+            actionValue: () async =>
+                'sing-box://import-remote-profile?url=${Uri.encodeComponent(singBoxUrl)}#$label',
+          ),
+          await build(
+            clientKey: 'surge',
+            displayName: 'Surge',
+            actionType: 'deep_link',
+            protocolHint: 'surge',
+            actionValue: () async =>
+                'surge:///install-config?url=${Uri.encodeComponent(surgeUrl)}&name=$label',
+          ),
+        ];
+      case 'windows':
+        final clashUrl = await accessUrlFor('clash');
+        final singBoxUrl = await accessUrlFor('sing-box');
+        return <Map<String, dynamic>>[
+          await build(
+            clientKey: 'clash',
+            displayName: 'Clash',
+            actionType: 'deep_link',
+            protocolHint: 'clash',
+            actionValue: () async =>
+                'clash://install-config?url=${Uri.encodeComponent(clashUrl)}&name=$label',
+          ),
+          await build(
+            clientKey: 'sing_box',
+            displayName: 'sing-box',
+            actionType: 'copy_link',
+            protocolHint: 'sing-box',
+            actionValue: () async => singBoxUrl,
+          ),
+        ];
+      default:
+        return const <Map<String, dynamic>>[];
+    }
+  }
+
   String _subscriptionAccessUrl(Request request, String accessId) {
     final origin = _requestOrigin(request);
     return origin.replace(
       path: '/api/app/v1/client/subscription/$accessId',
       queryParameters: const <String, String>{},
     ).toString();
+  }
+
+  Future<_SubscriptionAccessContext> _subscriptionAccessContext(
+    UpstreamAuth auth,
+  ) async {
+    final profileResponse = await upstreamApi.fetchUserProfile(auth);
+    final profile = Map<String, dynamic>.from(
+      profileResponse['data'] as Map? ?? const {},
+    );
+    final ownerKey = _subscriptionOwnerKey(profile);
+    final generation = await sessionStore.readSubscriptionGeneration(ownerKey);
+    return _SubscriptionAccessContext(
+      ownerKey: ownerKey,
+      generation: generation,
+    );
+  }
+
+  String _subscriptionOwnerKey(Map<String, dynamic> profile) {
+    final rawId = _trimmedOrNull(profile['id']?.toString());
+    if (rawId != null) {
+      return 'uid:$rawId';
+    }
+    final rawEmail = _trimmedOrNull(profile['email']?.toString());
+    if (rawEmail != null) {
+      return 'email:${rawEmail.toLowerCase()}';
+    }
+    throw StateError('subscription owner key unavailable');
   }
 
   Uri _requestOrigin(Request request) {
@@ -1602,4 +2013,20 @@ class _AppApiService {
     }
     return false;
   }
+}
+
+String? _trimmedOrNull(Object? raw) {
+  final value = raw?.toString().trim();
+  if (value == null || value.isEmpty) return null;
+  return value;
+}
+
+class _SubscriptionAccessContext {
+  const _SubscriptionAccessContext({
+    required this.ownerKey,
+    required this.generation,
+  });
+
+  final String ownerKey;
+  final int generation;
 }

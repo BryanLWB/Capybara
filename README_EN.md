@@ -208,7 +208,7 @@ bash scripts/update_local_xboard_upstream.sh --apply-migrations
 
 Admin assets are now injected through a local overlay mount. Do not copy them directly into `upstreams/xboard/public/assets/admin`, or you may break the nested submodule and later Git operations.
 
-Without this preparation, the `/ad1f98d6` admin page will render as a blank screen.
+Without this preparation, the Xboard admin page will render as a blank screen. Always use the admin path printed by `php artisan xboard:install` instead of assuming a fixed hashed path.
 
 If you want to open the local web console directly in a normal browser, prefer this stable entry point instead of `flutter run -d web-server`:
 

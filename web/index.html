@@ -33,6 +33,7 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <form id="capybara-auth-form" aria-hidden="true" style="display: none;"></form>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -41,6 +42,97 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    (() => {
+      const formId = 'capybara-auth-form';
+      const observedRoots = new WeakSet();
+
+      const visitRoots = (root, visitor) => {
+        if (!root) return;
+        visitor(root);
+        const nodes = root.querySelectorAll
+          ? root.querySelectorAll('*')
+          : [];
+        nodes.forEach((node) => {
+          if (node.shadowRoot) {
+            visitRoots(node.shadowRoot, visitor);
+          }
+        });
+      };
+
+      const collectInputs = () => {
+        const inputs = [];
+        visitRoots(document, (root) => {
+          if (!root.querySelectorAll) return;
+          root.querySelectorAll('input').forEach((element) => {
+            if (element instanceof HTMLInputElement) {
+              inputs.push(element);
+            }
+          });
+        });
+        return inputs;
+      };
+
+      const assignFieldMetadata = () => {
+        let emailCount = 0;
+        let passwordCount = 0;
+        let codeCount = 0;
+        let textCount = 0;
+        collectInputs().forEach((element) => {
+          if (!(element instanceof HTMLInputElement)) return;
+          if (element.type === 'hidden') return;
+
+          element.setAttribute('form', formId);
+
+          if (!element.name) {
+            if (element.type === 'email') {
+              emailCount += 1;
+              element.name = emailCount === 1 ? 'email' : `email_${emailCount}`;
+            } else if (element.type === 'password') {
+              passwordCount += 1;
+              element.name =
+                  passwordCount === 1 ? 'password' : `password_${passwordCount}`;
+            } else if (element.inputMode === 'numeric') {
+              codeCount += 1;
+              element.name = codeCount === 1 ? 'email_code' : `code_${codeCount}`;
+            } else {
+              textCount += 1;
+              element.name = `field_${textCount}`;
+            }
+          }
+
+          if (!element.id) {
+            element.id = `capybara-${element.name}`;
+          }
+        });
+      };
+
+      const observeRoot = (root) => {
+        if (!root || observedRoots.has(root)) return;
+        observedRoots.add(root);
+        new MutationObserver(() => {
+          observeAllRoots();
+          scheduleSync();
+        }).observe(root, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['type', 'inputmode'],
+        });
+      };
+
+      const observeAllRoots = () => {
+        visitRoots(document, observeRoot);
+      };
+
+      const scheduleSync = () => window.requestAnimationFrame(assignFieldMetadata);
+
+      observeAllRoots();
+      window.addEventListener('load', scheduleSync);
+      window.setInterval(assignFieldMetadata, 400);
+      scheduleSync();
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

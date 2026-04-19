@@ -64,6 +64,8 @@ class SubscriptionAccessRecord {
     required this.id,
     required this.upstreamToken,
     required this.upstreamAuth,
+    required this.ownerKey,
+    required this.generation,
     required this.createdAt,
     required this.expiresAt,
     this.flag,
@@ -72,6 +74,8 @@ class SubscriptionAccessRecord {
   final String id;
   final String upstreamToken;
   final String upstreamAuth;
+  final String ownerKey;
+  final int generation;
   final String? flag;
   final DateTime createdAt;
   final DateTime expiresAt;
@@ -82,6 +86,8 @@ class SubscriptionAccessRecord {
         'id': id,
         'upstream_token': upstreamToken,
         'upstream_auth': upstreamAuth,
+        'owner_key': ownerKey,
+        'generation': generation,
         'flag': flag,
         'created_at': createdAt.toIso8601String(),
         'expires_at': expiresAt.toIso8601String(),
@@ -92,6 +98,8 @@ class SubscriptionAccessRecord {
       id: json['id'] as String? ?? '',
       upstreamToken: json['upstream_token'] as String? ?? '',
       upstreamAuth: json['upstream_auth'] as String? ?? '',
+      ownerKey: json['owner_key'] as String? ?? '',
+      generation: json['generation'] as int? ?? 0,
       flag: json['flag'] as String?,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -117,17 +125,27 @@ abstract class SessionStore {
   Future<SubscriptionAccessRecord> createSubscriptionAccess({
     required String upstreamToken,
     required String upstreamAuth,
+    required String ownerKey,
+    required int generation,
     required Duration ttl,
     String? flag,
   });
 
   Future<SubscriptionAccessRecord?> readSubscriptionAccess(String accessId);
+
+  Future<int> readSubscriptionGeneration(String ownerKey);
+
+  Future<int> bumpSubscriptionGeneration(String ownerKey);
+
+  Future<void> revokeSubscriptionAccesses(String ownerKey);
 }
 
 class MemorySessionStore implements SessionStore {
   final Map<String, SessionRecord> _records = <String, SessionRecord>{};
   final Map<String, SubscriptionAccessRecord> _subscriptionAccess =
       <String, SubscriptionAccessRecord>{};
+  final Map<String, int> _subscriptionGenerations = <String, int>{};
+  final Map<String, Set<String>> _subscriptionOwners = <String, Set<String>>{};
 
   @override
   Future<SessionRecord> create({
@@ -172,6 +190,8 @@ class MemorySessionStore implements SessionStore {
   Future<SubscriptionAccessRecord> createSubscriptionAccess({
     required String upstreamToken,
     required String upstreamAuth,
+    required String ownerKey,
+    required int generation,
     required Duration ttl,
     String? flag,
   }) async {
@@ -180,11 +200,14 @@ class MemorySessionStore implements SessionStore {
       id: _newAccessId(),
       upstreamToken: upstreamToken,
       upstreamAuth: upstreamAuth,
+      ownerKey: ownerKey,
+      generation: generation,
       flag: flag,
       createdAt: now,
       expiresAt: now.add(ttl),
     );
     _subscriptionAccess[record.id] = record;
+    _subscriptionOwners.putIfAbsent(ownerKey, () => <String>{}).add(record.id);
     return record;
   }
 
@@ -194,10 +217,42 @@ class MemorySessionStore implements SessionStore {
     final record = _subscriptionAccess[accessId];
     if (record == null) return null;
     if (record.isExpired) {
-      _subscriptionAccess.remove(accessId);
+      _removeSubscriptionAccess(record);
       return null;
     }
     return record;
+  }
+
+  @override
+  Future<int> readSubscriptionGeneration(String ownerKey) async {
+    return _subscriptionGenerations[ownerKey] ?? 0;
+  }
+
+  @override
+  Future<int> bumpSubscriptionGeneration(String ownerKey) async {
+    final next = (_subscriptionGenerations[ownerKey] ?? 0) + 1;
+    _subscriptionGenerations[ownerKey] = next;
+    return next;
+  }
+
+  @override
+  Future<void> revokeSubscriptionAccesses(String ownerKey) async {
+    final accessIds = _subscriptionOwners.remove(ownerKey);
+    if (accessIds == null || accessIds.isEmpty) {
+      return;
+    }
+    for (final accessId in accessIds) {
+      _subscriptionAccess.remove(accessId);
+    }
+  }
+
+  void _removeSubscriptionAccess(SubscriptionAccessRecord record) {
+    _subscriptionAccess.remove(record.id);
+    final ownerAccess = _subscriptionOwners[record.ownerKey];
+    ownerAccess?.remove(record.id);
+    if (ownerAccess != null && ownerAccess.isEmpty) {
+      _subscriptionOwners.remove(record.ownerKey);
+    }
   }
 }
 
@@ -206,6 +261,10 @@ class RedisSessionStore implements SessionStore {
 
   static const String _prefix = 'app_api:session:';
   static const String _subscriptionPrefix = 'app_api:subscription_access:';
+  static const String _subscriptionGenerationPrefix =
+      'app_api:subscription_generation:';
+  static const String _subscriptionOwnerPrefix =
+      'app_api:subscription_owner:';
   final RedisClient _client;
 
   @override
@@ -271,6 +330,8 @@ class RedisSessionStore implements SessionStore {
   Future<SubscriptionAccessRecord> createSubscriptionAccess({
     required String upstreamToken,
     required String upstreamAuth,
+    required String ownerKey,
+    required int generation,
     required Duration ttl,
     String? flag,
   }) async {
@@ -279,6 +340,8 @@ class RedisSessionStore implements SessionStore {
       id: _newAccessId(),
       upstreamToken: upstreamToken,
       upstreamAuth: upstreamAuth,
+      ownerKey: ownerKey,
+      generation: generation,
       flag: flag,
       createdAt: now,
       expiresAt: now.add(ttl),
@@ -288,6 +351,8 @@ class RedisSessionStore implements SessionStore {
       jsonEncode(record.toJson()),
       ttl.inSeconds,
     );
+    final accessIds = await _readOwnerAccessIds(ownerKey)..add(record.id);
+    await _writeOwnerAccessIds(ownerKey, accessIds);
     return record;
   }
 
@@ -306,9 +371,60 @@ class RedisSessionStore implements SessionStore {
     final record = SubscriptionAccessRecord.fromJson(decoded);
     if (record.isExpired) {
       await _client.delete([key]);
+      final accessIds = await _readOwnerAccessIds(record.ownerKey)
+        ..remove(record.id);
+      await _writeOwnerAccessIds(record.ownerKey, accessIds);
       return null;
     }
     return record;
+  }
+
+  @override
+  Future<int> readSubscriptionGeneration(String ownerKey) async {
+    final value = await _client.get('$_subscriptionGenerationPrefix$ownerKey');
+    if (value == null || value.toString().isEmpty) {
+      return 0;
+    }
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  @override
+  Future<int> bumpSubscriptionGeneration(String ownerKey) async {
+    return _client.incr('$_subscriptionGenerationPrefix$ownerKey');
+  }
+
+  @override
+  Future<void> revokeSubscriptionAccesses(String ownerKey) async {
+    final accessIds = await _readOwnerAccessIds(ownerKey);
+    if (accessIds.isNotEmpty) {
+      await _client.delete(
+        accessIds.map((id) => '$_subscriptionPrefix$id').toList(),
+      );
+    }
+    await _client.delete(['$_subscriptionOwnerPrefix$ownerKey']);
+  }
+
+  Future<List<String>> _readOwnerAccessIds(String ownerKey) async {
+    final value = await _client.get('$_subscriptionOwnerPrefix$ownerKey');
+    if (value == null || value.toString().isEmpty) {
+      return <String>[];
+    }
+    final decoded = jsonDecode(value.toString());
+    if (decoded is! List) {
+      return <String>[];
+    }
+    return decoded
+        .map((item) => item?.toString() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> _writeOwnerAccessIds(String ownerKey, List<String> accessIds) {
+    final key = '$_subscriptionOwnerPrefix$ownerKey';
+    if (accessIds.isEmpty) {
+      return _client.delete([key]);
+    }
+    return _client.set(key, jsonEncode(accessIds));
   }
 }
 

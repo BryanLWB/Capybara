@@ -215,9 +215,23 @@ class WebOrderDetailData {
     required this.amountSurplus,
     required this.amountHandling,
     required this.createdAt,
+    int? amountOriginal,
+    int? amountDueBeforeFee,
+    int? amountDueAfterFee,
+    int? amountDiscountApplied,
+    int? amountBalanceUsed,
+    int? amountSurplusCredit,
+    int? amountRefundValue,
     this.plan,
     this.paymentMethod,
-  });
+  })  : amountOriginal =
+            amountOriginal ?? (amountTotal + amountDiscount + amountBalance),
+        amountDueBeforeFee = amountDueBeforeFee ?? amountTotal,
+        amountDueAfterFee = amountDueAfterFee ?? amountPayable,
+        amountDiscountApplied = amountDiscountApplied ?? amountDiscount,
+        amountBalanceUsed = amountBalanceUsed ?? amountBalance,
+        amountSurplusCredit = amountSurplusCredit ?? amountSurplus,
+        amountRefundValue = amountRefundValue ?? amountRefund;
 
   final String orderRef;
   final int stateCode;
@@ -230,6 +244,13 @@ class WebOrderDetailData {
   final int amountSurplus;
   final int amountHandling;
   final int createdAt;
+  final int amountOriginal;
+  final int amountDueBeforeFee;
+  final int amountDueAfterFee;
+  final int amountDiscountApplied;
+  final int amountBalanceUsed;
+  final int amountSurplusCredit;
+  final int amountRefundValue;
   final WebPlanViewData? plan;
   final WebPaymentMethodData? paymentMethod;
 
@@ -251,6 +272,13 @@ class WebOrderDetailData {
       amountSurplus: _toInt(json['amount_surplus']),
       amountHandling: _toInt(json['amount_handling']),
       createdAt: _toInt(json['created_at']),
+      amountOriginal: _nullableInt(json['amount_original']),
+      amountDueBeforeFee: _nullableInt(json['amount_due_before_fee']),
+      amountDueAfterFee: _nullableInt(json['amount_due_after_fee']),
+      amountDiscountApplied: _nullableInt(json['amount_discount_applied']),
+      amountBalanceUsed: _nullableInt(json['amount_balance_used']),
+      amountSurplusCredit: _nullableInt(json['amount_surplus_credit']),
+      amountRefundValue: _nullableInt(json['amount_refund_value']),
       plan: planJson is Map
           ? WebPlanViewData.fromJson(Map<String, dynamic>.from(planJson))
           : fallbackPlan,
@@ -270,8 +298,13 @@ class WebOrderListItemData {
     required this.amountTotal,
     required this.createdAt,
     required this.updatedAt,
+    int? amountOriginal,
+    int? amountDueBeforeFee,
+    int? amountDueAfterFee,
     this.plan,
-  });
+  })  : amountOriginal = amountOriginal ?? amountTotal,
+        amountDueBeforeFee = amountDueBeforeFee ?? amountTotal,
+        amountDueAfterFee = amountDueAfterFee ?? amountTotal;
 
   final String orderRef;
   final int stateCode;
@@ -279,6 +312,9 @@ class WebOrderListItemData {
   final int amountTotal;
   final int createdAt;
   final int updatedAt;
+  final int amountOriginal;
+  final int amountDueBeforeFee;
+  final int amountDueAfterFee;
   final WebPlanViewData? plan;
 
   bool get isPending => stateCode == 0;
@@ -292,6 +328,9 @@ class WebOrderListItemData {
       amountTotal: _toInt(json['amount_total']),
       createdAt: _toInt(json['created_at']),
       updatedAt: _toInt(json['updated_at']),
+      amountOriginal: _nullableInt(json['amount_original']),
+      amountDueBeforeFee: _nullableInt(json['amount_due_before_fee']),
+      amountDueAfterFee: _nullableInt(json['amount_due_after_fee']),
       plan: planJson is Map
           ? WebPlanViewData.fromJson(Map<String, dynamic>.from(planJson))
           : null,

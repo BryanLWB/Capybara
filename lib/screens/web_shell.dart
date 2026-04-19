@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../models/web_purchase_view_data.dart';
@@ -8,6 +10,7 @@ import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
 import '../widgets/animated_background.dart';
 import '../widgets/web_crisp_widget.dart';
+import '../widgets/web_layout_metrics.dart';
 import 'web_account_page.dart';
 import 'web_help_page.dart';
 import 'web_home_page.dart';
@@ -107,7 +110,13 @@ class _WebShellState extends State<WebShell> {
   Widget build(BuildContext context) {
     final isChinese = _isChinese(context);
     final width = MediaQuery.of(context).size.width;
-    final isWide = width >= 1040;
+    final isWide = WebLayoutMetrics.useWideNav(width);
+    final gutter = WebLayoutMetrics.horizontalPadding(width);
+    final navPadding = width >= 1280
+        ? 20.0
+        : width >= 980
+            ? 16.0
+            : 14.0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -120,42 +129,157 @@ class _WebShellState extends State<WebShell> {
             child: Column(
               children: [
                 Container(
-                  margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
+                  margin: EdgeInsets.fromLTRB(
+                    gutter,
+                    width >= 980 ? 12 : 16,
+                    gutter,
+                    width >= 980 ? 10 : 12,
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: navPadding,
+                    vertical: width >= 1280
+                        ? 16
+                        : width >= 980
+                            ? 12
+                            : 14,
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.surface.withValues(alpha: 0.88),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: AppColors.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 36,
+                        offset: const Offset(0, 16),
+                      ),
+                    ],
                   ),
                   child: isWide
                       ? Row(
                           children: [
                             _buildBrand(context, isChinese),
                             const Spacer(),
-                            _buildNavBar(context, isChinese),
+                            _buildNavBar(
+                              context,
+                              isChinese,
+                              sections: WebShellSection.values,
+                            ),
                             const Spacer(),
                             _buildLogoutButton(isChinese),
                           ],
                         )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            const baseSections = <WebShellSection>[
+                              WebShellSection.home,
+                              WebShellSection.purchase,
+                              WebShellSection.help,
+                              WebShellSection.invite,
+                            ];
+                            const expandedSections = <WebShellSection>[
+                              WebShellSection.home,
+                              WebShellSection.purchase,
+                              WebShellSection.help,
+                              WebShellSection.invite,
+                              WebShellSection.account,
+                            ];
+                            final brandWidth = _estimateBrandWidth(
+                              context,
+                              isChinese,
+                            );
+                            final logoutWidth = _estimateLogoutWidth(
+                              context,
+                              isChinese,
+                              compact: true,
+                            );
+                            final allNavWidth = _estimateNavRowWidth(
+                              context,
+                              isChinese,
+                              sections: expandedSections,
+                              compact: true,
+                            );
+                            const compactFitSafetyGap = 24.0;
+                            final singleRowFits =
+                                brandWidth + 16 + allNavWidth + 16 + logoutWidth <=
+                                    constraints.maxWidth;
+
+                            if (singleRowFits) {
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildBrand(context, isChinese),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      child: _buildNavBar(
+                                        context,
+                                        isChinese,
+                                        sections: expandedSections,
+                                        compact: true,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildLogoutButton(
+                                    isChinese,
+                                    compact: true,
+                                  ),
+                                ],
+                              );
+                            }
+                            final userOnSecondRow =
+                                allNavWidth + compactFitSafetyGap <=
+                                    constraints.maxWidth;
+                            final secondRowSections = userOnSecondRow
+                                ? expandedSections
+                                : baseSections;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildBrand(context, isChinese),
-                                const Spacer(),
-                                _buildLogoutButton(isChinese),
+                                userOnSecondRow
+                                    ? Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: _buildBrand(
+                                              context,
+                                              isChinese,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          _buildLogoutButton(
+                                            isChinese,
+                                            compact: true,
+                                          ),
+                                        ],
+                                      )
+                                    : _buildCompactHeaderWithFloatingUser(
+                                        context,
+                                        isChinese,
+                                      ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: constraints.maxWidth,
+                                  child: Center(
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.topCenter,
+                                      child: _buildNavBar(
+                                        context,
+                                        isChinese,
+                                        sections: secondRowSections,
+                                        compact: true,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
-                            ),
-                            const SizedBox(height: 16),
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: _buildNavBar(context, isChinese),
-                            ),
-                          ],
+                            );
+                          },
                         ),
                 ),
                 Expanded(
@@ -188,79 +312,237 @@ class _WebShellState extends State<WebShell> {
   }
 
   Widget _buildBrand(BuildContext context, bool isChinese) {
+    final width = MediaQuery.of(context).size.width;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Capybara',
           style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                fontSize: 28,
+                fontSize: width >= 1280
+                    ? 28
+                    : width >= 980
+                        ? 24
+                        : 24,
                 letterSpacing: 0.4,
               ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           isChinese ? '会员中心' : 'Member Center',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontSize: width >= 980 ? 12 : 13,
+              ),
         ),
       ],
     );
   }
 
-  Widget _buildNavBar(BuildContext context, bool isChinese) {
+  Widget _buildNavBar(
+    BuildContext context,
+    bool isChinese, {
+    required List<WebShellSection> sections,
+    bool compact = false,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: WebShellSection.values.map((section) {
-        final isSelected = _currentSection == section;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => _openSection(section),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? AppColors.accent.withValues(alpha: 0.14)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    section.icon,
-                    size: 18,
-                    color:
-                        isSelected ? AppColors.accent : AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    section.label(isChinese),
-                    style: TextStyle(
-                      color: isSelected
-                          ? AppColors.textPrimary
-                          : AppColors.textSecondary,
-                      fontWeight:
-                          isSelected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      children: [
+        for (var i = 0; i < sections.length; i++) ...[
+          _buildNavItem(
+            context,
+            sections[i],
+            isChinese,
+            compact: compact,
           ),
-        );
-      }).toList(),
+          if (i != sections.length - 1) const SizedBox(width: 6),
+        ],
+      ],
     );
   }
 
-  Widget _buildLogoutButton(bool isChinese) {
+  Widget _buildCompactHeaderWithFloatingUser(
+    BuildContext context,
+    bool isChinese,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildBrand(context, isChinese),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.topCenter,
+              child: _buildNavItem(
+                context,
+                WebShellSection.account,
+                isChinese,
+                compact: true,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        _buildLogoutButton(isChinese, compact: true),
+      ],
+    );
+  }
+
+  double _estimateBrandWidth(BuildContext context, bool isChinese) {
+    final width = MediaQuery.of(context).size.width;
+    final titleStyle = Theme.of(context).textTheme.displayMedium?.copyWith(
+          fontSize: width >= 1280
+              ? 28
+              : width >= 980
+                  ? 24
+                  : 24,
+          letterSpacing: 0.4,
+        );
+    final subtitleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontSize: width >= 980 ? 12 : 13,
+        );
+    final titleWidth = _measureTextWidth(context, 'Capybara', titleStyle);
+    final subtitleWidth = _measureTextWidth(
+      context,
+      isChinese ? '会员中心' : 'Member Center',
+      subtitleStyle,
+    );
+    return math.max(titleWidth, subtitleWidth);
+  }
+
+  double _estimateNavRowWidth(
+    BuildContext context,
+    bool isChinese, {
+    required List<WebShellSection> sections,
+    required bool compact,
+  }) {
+    var total = 0.0;
+    for (var i = 0; i < sections.length; i++) {
+      total += _estimateNavItemWidth(
+        context,
+        sections[i],
+        isChinese,
+        compact: compact,
+      );
+      if (i != sections.length - 1) {
+        total += 6;
+      }
+    }
+    return total;
+  }
+
+  double _estimateNavItemWidth(
+    BuildContext context,
+    WebShellSection section,
+    bool isChinese, {
+    required bool compact,
+  }) {
+    final width = MediaQuery.of(context).size.width;
+    final horizontal = compact ? 14.0 : (width >= 980 ? 14.0 : 16.0);
+    final iconSize = compact ? 18.0 : (width >= 980 ? 17.0 : 18.0);
+    final textStyle = TextStyle(
+      fontWeight:
+          _currentSection == section ? FontWeight.w700 : FontWeight.w500,
+      fontSize: compact ? 14 : (width >= 980 ? 14 : null),
+    );
+    return horizontal * 2 +
+        iconSize +
+        8 +
+        _measureTextWidth(context, section.label(isChinese), textStyle);
+  }
+
+  double _estimateLogoutWidth(
+    BuildContext context,
+    bool isChinese, {
+    required bool compact,
+  }) {
+    final label = isChinese ? '退出登录' : 'Logout';
+    final textStyle = TextStyle(fontSize: compact ? 14 : 15);
+    final horizontal = compact ? 12.0 : 16.0;
+    return horizontal * 2 +
+        18 +
+        8 +
+        _measureTextWidth(context, label, textStyle);
+  }
+
+  double _measureTextWidth(
+    BuildContext context,
+    String text,
+    TextStyle? style,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+    )..layout();
+    return painter.width;
+  }
+
+  Widget _buildNavItem(
+    BuildContext context,
+    WebShellSection section,
+    bool isChinese, {
+    bool compact = false,
+  }) {
+    final width = MediaQuery.of(context).size.width;
+    final isSelected = _currentSection == section;
+    final horizontal = compact ? 14.0 : (width >= 980 ? 14.0 : 16.0);
+    final vertical = compact ? 10.0 : (width >= 980 ? 10.0 : 12.0);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _openSection(section),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontal,
+          vertical: vertical,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.accent.withValues(alpha: 0.14)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              section.icon,
+              size: compact ? 18 : (width >= 980 ? 17 : 18),
+              color: isSelected ? AppColors.accent : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              section.label(isChinese),
+              style: TextStyle(
+                color: isSelected
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                fontSize: compact ? 14 : (width >= 980 ? 14 : null),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogoutButton(bool isChinese, {bool compact = false}) {
     return TextButton.icon(
       onPressed: _logout,
       icon: const Icon(Icons.logout_rounded, size: 18),
       label: Text(isChinese ? '退出登录' : 'Logout'),
       style: TextButton.styleFrom(
         foregroundColor: AppColors.textPrimary,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 16,
+          vertical: compact ? 10 : 12,
+        ),
+        textStyle: TextStyle(fontSize: compact ? 14 : 15),
       ),
     );
   }
@@ -279,10 +561,10 @@ class _WebShellState extends State<WebShell> {
             _purchaseInitialOrderRef == null) {
           return widget.purchasePageBuilder!.call(context);
         }
-          return WebPurchasePage(
-            key: ValueKey(
-              'web-purchase-$_purchaseViewSeed-${_purchaseInitialOrderRef ?? 'catalog'}',
-            ),
+        return WebPurchasePage(
+          key: ValueKey(
+            'web-purchase-$_purchaseViewSeed-${_purchaseInitialOrderRef ?? 'catalog'}',
+          ),
           initialOrderRef: _purchaseInitialOrderRef,
           initialFallbackPlan: _purchaseInitialFallbackPlan,
           onOpenUserOrders: _openUserOrders,

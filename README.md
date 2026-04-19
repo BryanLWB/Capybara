@@ -208,7 +208,7 @@ bash scripts/update_local_xboard_upstream.sh --apply-migrations
 
 现在管理后台资源会通过本地 overlay 注入到容器里，不应再手动把资源复制到 `upstreams/xboard/public/assets/admin` 子模块根目录；否则后续 `git status`、切分支和 rebase 可能损坏。
 
-如果不做这一步，`/ad1f98d6` 管理后台会白屏。
+如果不做这一步，Xboard 管理后台页面会白屏。管理后台路径请以 `php artisan xboard:install` 的输出为准，不要手动假设固定 hash 路径。
 
 如果你想在普通浏览器里直接打开本地 web 端，优先使用下面这个稳定入口，而不是 `flutter run -d web-server`：
 

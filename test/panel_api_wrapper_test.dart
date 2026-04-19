@@ -115,7 +115,10 @@ class _FakeAppApi extends AppApi {
       _profile ?? jsonDecode('{"data":{"account":{}}}') as Map<String, dynamic>;
 
   @override
-  Future<Map<String, dynamic>> getInviteRecords() async =>
+  Future<Map<String, dynamic>> getInviteRecords({
+    int page = 1,
+    int pageSize = 10,
+  }) async =>
       _inviteRecords ??
       jsonDecode('{"data":{"items":[]}}') as Map<String, dynamic>;
 

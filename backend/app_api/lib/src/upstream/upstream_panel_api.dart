@@ -363,14 +363,19 @@ class UpstreamPanelApi implements UpstreamApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchInviteRecords(
-      UpstreamAuth auth) async {
-    final response = await _get('/api/v1/user/invite/details', auth: auth);
-    final data = response['data'];
-    if (data is List) {
-      return data.map((item) => Map<String, dynamic>.from(item)).toList();
-    }
-    return <Map<String, dynamic>>[];
+  Future<Map<String, dynamic>> fetchInviteRecords(
+    UpstreamAuth auth, {
+    required int page,
+    required int pageSize,
+  }) {
+    return _get(
+      '/api/v1/user/invite/details',
+      auth: auth,
+      query: <String, String>{
+        'current': '$page',
+        'page_size': '$pageSize',
+      },
+    );
   }
 
   @override
@@ -508,6 +513,11 @@ class UpstreamPanelApi implements UpstreamApi {
       '/api/v1/client/app/getVersion',
       query: {'token': auth.token},
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchTelegramBotInfo(UpstreamAuth auth) {
+    return _get('/api/v1/user/telegram/getBotInfo', auth: auth);
   }
 
   @override

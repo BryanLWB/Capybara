@@ -259,8 +259,17 @@ class AppApi {
     return _get('/referrals/overview');
   }
 
-  Future<Map<String, dynamic>> getInviteRecords() {
-    return _get('/referrals/records');
+  Future<Map<String, dynamic>> getInviteRecords({
+    int page = 1,
+    int pageSize = 10,
+  }) {
+    return _get(
+      '/referrals/records',
+      query: <String, String>{
+        'page': '$page',
+        'page_size': '$pageSize',
+      },
+    );
   }
 
   Future<Map<String, dynamic>> createInviteCode() {
@@ -344,6 +353,13 @@ class AppApi {
 
   Future<Map<String, dynamic>> getClientDownloads() {
     return _get('/client/downloads');
+  }
+
+  Future<Map<String, dynamic>> getClientImportOptions(String platform) {
+    return _get(
+      '/client/import-options',
+      query: <String, String>{'platform': platform},
+    );
   }
 
   Future<void> logout() async {

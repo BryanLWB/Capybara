@@ -17,6 +17,7 @@ import '../widgets/action_button.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
+import '../widgets/web_layout_metrics.dart';
 import '../widgets/web_page_frame.dart';
 import '../widgets/web_page_hero.dart';
 
@@ -453,15 +454,25 @@ class _HelpArticleDialogState extends State<_HelpArticleDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final compact = WebLayoutMetrics.compact(size.width);
     return Dialog(
       key: const Key('web-help-article-dialog'),
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 24,
+        vertical: compact ? 12 : 24,
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 940, maxHeight: 760),
+        constraints: BoxConstraints(
+          maxWidth: size.width >= 1180
+              ? 940
+              : (size.width >= 860 ? 860 : size.width - (compact ? 24 : 48)),
+          maxHeight: WebLayoutMetrics.dialogMaxHeight(context),
+        ),
         child: GradientCard(
           borderRadius: 30,
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(compact ? 18 : 24),
           child: FutureBuilder<HelpArticleDetail>(
             future: _future,
             builder: (context, snapshot) {
@@ -506,7 +517,10 @@ class _HelpArticleDialogState extends State<_HelpArticleDialog> {
                               style: Theme.of(context)
                                   .textTheme
                                   .displayMedium
-                                  ?.copyWith(fontSize: 30, height: 1.15),
+                                  ?.copyWith(
+                                    fontSize: compact ? 26 : 30,
+                                    height: 1.15,
+                                  ),
                             ),
                             const SizedBox(height: 10),
                             Text(

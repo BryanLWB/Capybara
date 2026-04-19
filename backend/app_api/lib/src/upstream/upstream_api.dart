@@ -117,7 +117,11 @@ abstract class UpstreamApi {
 
   Future<Map<String, dynamic>> fetchInviteOverview(UpstreamAuth auth);
 
-  Future<List<Map<String, dynamic>>> fetchInviteRecords(UpstreamAuth auth);
+  Future<Map<String, dynamic>> fetchInviteRecords(
+    UpstreamAuth auth, {
+    required int page,
+    required int pageSize,
+  });
 
   Future<void> generateInviteCode(UpstreamAuth auth);
 
@@ -165,6 +169,8 @@ abstract class UpstreamApi {
   Future<Map<String, dynamic>> fetchClientConfig(UpstreamAuth auth);
 
   Future<Map<String, dynamic>> fetchClientVersion(UpstreamAuth auth);
+
+  Future<Map<String, dynamic>> fetchTelegramBotInfo(UpstreamAuth auth);
 
   Future<Map<String, dynamic>> fetchHelpArticles(
     UpstreamAuth auth, {

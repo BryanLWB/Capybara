@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/web_account_view_data.dart';
 import '../models/web_purchase_view_data.dart';
@@ -14,6 +16,7 @@ import '../utils/formatters.dart';
 import '../utils/web_error_text.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/gradient_card.dart';
+import '../widgets/web_layout_metrics.dart';
 import '../widgets/web_page_frame.dart';
 import '../widgets/web_page_hero.dart';
 
@@ -28,6 +31,10 @@ typedef WebAccountPasswordChanger = Future<void> Function({
 });
 typedef WebAccountSubscriptionResetter = Future<void> Function();
 typedef WebUserOrdersLoader = Future<List<WebOrderListItemData>> Function();
+typedef WebUserOrderDetailLoader = Future<WebOrderDetailData> Function(
+  String orderRef,
+  WebPlanViewData? fallbackPlan,
+);
 typedef WebUserOrderCanceler = Future<void> Function(String orderRef);
 typedef WebUserNodeStatusesLoader = Future<List<WebNodeStatusItemData>>
     Function();
@@ -61,6 +68,7 @@ class WebAccountPage extends StatefulWidget {
     this.passwordChanger,
     this.subscriptionResetter,
     this.ordersLoader,
+    this.orderDetailLoader,
     this.orderCanceler,
     this.nodeStatusesLoader,
     this.ticketsLoader,
@@ -79,6 +87,7 @@ class WebAccountPage extends StatefulWidget {
   final WebAccountPasswordChanger? passwordChanger;
   final WebAccountSubscriptionResetter? subscriptionResetter;
   final WebUserOrdersLoader? ordersLoader;
+  final WebUserOrderDetailLoader? orderDetailLoader;
   final WebUserOrderCanceler? orderCanceler;
   final WebUserNodeStatusesLoader? nodeStatusesLoader;
   final WebUserTicketsLoader? ticketsLoader;
@@ -146,6 +155,14 @@ class _WebAccountPageState extends State<WebAccountPage> {
   Future<List<WebOrderListItemData>> _loadOrders() {
     final loader = widget.ordersLoader ?? _facade.loadOrders;
     return loader();
+  }
+
+  Future<WebOrderDetailData> _loadOrderDetail(
+    String orderRef,
+    WebPlanViewData? fallbackPlan,
+  ) {
+    final loader = widget.orderDetailLoader ?? _facade.loadOrderDetail;
+    return loader(orderRef, fallbackPlan);
   }
 
   Future<List<WebNodeStatusItemData>> _loadNodeStatuses() {
@@ -393,6 +410,65 @@ class _WebAccountPageState extends State<WebAccountPage> {
     }
   }
 
+  Future<void> _openOrderDetail(WebOrderListItemData order) async {
+    final isChinese = _isChinese(context);
+    try {
+      final detail = await _loadOrderDetail(order.orderRef, order.plan);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _OrderDetailDialog(
+          isChinese: isChinese,
+          detail: detail,
+          onContinue:
+              detail.stateCode == 0 ? () => _continueOrder(order) : null,
+          onCancel: detail.stateCode == 0 ? () => _cancelOrder(order) : null,
+        ),
+      );
+    } catch (error) {
+      _handleActionError(error, isChinese);
+    }
+  }
+
+  Future<void> _openTelegramLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      throw StateError('telegram.url.invalid');
+    }
+    final opened = await launchUrl(uri, webOnlyWindowName: '_blank');
+    if (!opened) {
+      throw StateError('telegram.url.unavailable');
+    }
+  }
+
+  Future<void> _copyTelegramCommand(
+    String command,
+    bool isChinese,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: command));
+    if (!mounted) return;
+    _showSnack(isChinese ? '绑定命令已复制。' : 'Bind command copied.');
+  }
+
+  Future<void> _openTelegramBindDialog(WebAccountProfileData profile) async {
+    final isChinese = _isChinese(context);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _TelegramBindDialog(
+        isChinese: isChinese,
+        bindUrl: profile.telegramBindUrl,
+        bindCommand: profile.telegramBindCommand,
+        onOpenTelegram: profile.telegramBindUrl == null
+            ? null
+            : () => _openTelegramLink(profile.telegramBindUrl!),
+        onCopyCommand: profile.telegramBindCommand == null
+            ? null
+            : () =>
+                _copyTelegramCommand(profile.telegramBindCommand!, isChinese),
+      ),
+    );
+  }
+
   Future<void> _openCreateTicketDialog() async {
     final isChinese = _isChinese(context);
     final request = await showDialog<_TicketComposeRequest>(
@@ -557,7 +633,8 @@ class _WebAccountPageState extends State<WebAccountPage> {
 
   Widget _buildProfilePane(BuildContext context) {
     final isChinese = _isChinese(context);
-    final wide = MediaQuery.of(context).size.width >= 1080;
+    final width = MediaQuery.of(context).size.width;
+    final wide = WebLayoutMetrics.useWideProfileRow(width);
 
     return FutureBuilder<WebAccountProfileData>(
       future: _profileFuture,
@@ -630,7 +707,94 @@ class _WebAccountPageState extends State<WebAccountPage> {
                 ),
               ),
             ],
-            const SizedBox(height: 18),
+            if (profile != null &&
+                (profile.telegramEnabled ||
+                    profile.telegramDiscussLink != null)) ...[
+              const SizedBox(height: 18),
+              if (wide)
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (profile.telegramEnabled)
+                        Expanded(
+                          child: _FeatureActionCard(
+                            title: profile.telegramBound
+                                ? (isChinese
+                                    ? 'Telegram 已绑定'
+                                    : 'Telegram Connected')
+                                : (isChinese
+                                    ? '绑定 Telegram'
+                                    : 'Connect Telegram'),
+                            description: profile.telegramBound
+                                ? (isChinese
+                                    ? '当前账号已经绑定 Telegram，可继续使用机器人通知。'
+                                    : 'Telegram is already connected to this account.')
+                                : (isChinese
+                                    ? '绑定后可以更方便地接收通知与协助信息。'
+                                    : 'Connect Telegram to receive updates more easily.'),
+                            buttonLabel: profile.telegramBound
+                                ? (isChinese ? '已绑定' : 'Connected')
+                                : (isChinese ? '前往绑定' : 'Open Telegram'),
+                            onPressed: profile.telegramBound
+                                ? null
+                                : () => _openTelegramBindDialog(profile),
+                          ),
+                        ),
+                      if (profile.telegramEnabled &&
+                          profile.telegramDiscussLink != null)
+                        const SizedBox(width: 16),
+                      if (profile.telegramDiscussLink != null)
+                        Expanded(
+                          child: _FeatureActionCard(
+                            title: isChinese ? '加入讨论组' : 'Join Community',
+                            description: isChinese
+                                ? '如需交流使用经验或查看群内通知，可直接加入讨论组。'
+                                : 'Join the discussion group for updates and help.',
+                            buttonLabel: isChinese ? '打开链接' : 'Open Link',
+                            onPressed: () =>
+                                _openTelegramLink(profile.telegramDiscussLink!),
+                          ),
+                        ),
+                    ],
+                  ),
+                )
+              else ...[
+                if (profile.telegramEnabled)
+                  _FeatureActionCard(
+                    title: profile.telegramBound
+                        ? (isChinese ? 'Telegram 已绑定' : 'Telegram Connected')
+                        : (isChinese ? '绑定 Telegram' : 'Connect Telegram'),
+                    description: profile.telegramBound
+                        ? (isChinese
+                            ? '当前账号已经绑定 Telegram，可继续使用机器人通知。'
+                            : 'Telegram is already connected to this account.')
+                        : (isChinese
+                            ? '绑定后可以更方便地接收通知与协助信息。'
+                            : 'Connect Telegram to receive updates more easily.'),
+                    buttonLabel: profile.telegramBound
+                        ? (isChinese ? '已绑定' : 'Connected')
+                        : (isChinese ? '前往绑定' : 'Open Telegram'),
+                    onPressed: profile.telegramBound
+                        ? null
+                        : () => _openTelegramBindDialog(profile),
+                  ),
+                if (profile.telegramEnabled &&
+                    profile.telegramDiscussLink != null)
+                  const SizedBox(height: 16),
+                if (profile.telegramDiscussLink != null)
+                  _FeatureActionCard(
+                    title: isChinese ? '加入讨论组' : 'Join Community',
+                    description: isChinese
+                        ? '如需交流使用经验或查看群内通知，可直接加入讨论组。'
+                        : 'Join the discussion group for updates and help.',
+                    buttonLabel: isChinese ? '打开链接' : 'Open Link',
+                    onPressed: () =>
+                        _openTelegramLink(profile.telegramDiscussLink!),
+                  ),
+              ],
+            ],
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
             _RiskActionCard(
               title: isChinese ? '修改你的密码' : 'Change Password',
               description: isChinese
@@ -723,9 +887,9 @@ class _WebAccountPageState extends State<WebAccountPage> {
                   order: order,
                   isChinese: isChinese,
                   isBusy: _busyOrderRef == order.orderRef,
-                  onContinue: order.isPending
-                      ? () => _continueOrder(order)
-                      : null,
+                  onDetail: () => _openOrderDetail(order),
+                  onContinue:
+                      order.isPending ? () => _continueOrder(order) : null,
                   onCancel: order.isPending ? () => _cancelOrder(order) : null,
                 ),
               ),
@@ -982,8 +1146,7 @@ class _UserSubpagePill extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color:
-                selected ? AppColors.textPrimary : AppColors.textSecondary,
+            color: selected ? AppColors.textPrimary : AppColors.textSecondary,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
           ),
         ),
@@ -1136,8 +1299,9 @@ class _InlineActionCardButton extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color:
-                    emphasized ? AppColors.textPrimary : AppColors.textSecondary,
+                color: emphasized
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -1153,6 +1317,7 @@ class _OrderCard extends StatelessWidget {
     required this.order,
     required this.isChinese,
     required this.isBusy,
+    this.onDetail,
     this.onContinue,
     this.onCancel,
   });
@@ -1160,6 +1325,7 @@ class _OrderCard extends StatelessWidget {
   final WebOrderListItemData order;
   final bool isChinese;
   final bool isBusy;
+  final VoidCallback? onDetail;
   final VoidCallback? onContinue;
   final VoidCallback? onCancel;
 
@@ -1175,8 +1341,7 @@ class _OrderCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  order.plan?.title ??
-                      (isChinese ? '未命名套餐' : 'Untitled plan'),
+                  order.plan?.title ?? (isChinese ? '未命名套餐' : 'Untitled plan'),
                   style: Theme.of(context).textTheme.displayMedium?.copyWith(
                         fontSize: 28,
                       ),
@@ -1203,7 +1368,7 @@ class _OrderCard extends StatelessWidget {
               ),
               _MetaText(
                 label: isChinese ? '金额' : 'Amount',
-                value: '¥${Formatters.formatCurrency(order.amountTotal)}',
+                value: '¥${Formatters.formatCurrency(order.amountDueAfterFee)}',
               ),
               _MetaText(
                 label: isChinese ? '创建时间' : 'Created',
@@ -1214,12 +1379,20 @@ class _OrderCard extends StatelessWidget {
           const SizedBox(height: 18),
           Row(
             children: [
-              if (order.isPending && onContinue != null)
+              if (onDetail != null)
                 _InlineActionCardButton(
-                  label: isChinese ? '继续支付' : 'Continue',
-                  onTap: isBusy ? null : onContinue,
-                  isLoading: isBusy,
-                  emphasized: true,
+                  label: isChinese ? '查看详情' : 'View Details',
+                  onTap: onDetail,
+                ),
+              if (order.isPending && onContinue != null)
+                Padding(
+                  padding: EdgeInsets.only(left: onDetail != null ? 12 : 0),
+                  child: _InlineActionCardButton(
+                    label: isChinese ? '继续支付' : 'Continue',
+                    onTap: isBusy ? null : onContinue,
+                    isLoading: isBusy,
+                    emphasized: true,
+                  ),
                 ),
               if (order.isPending && onCancel != null) ...[
                 const SizedBox(width: 12),
@@ -1538,11 +1711,20 @@ class _BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
+    final valueSize = width >= 1120
+        ? 84.0
+        : width >= 860
+            ? 72.0
+            : width >= 640
+                ? 64.0
+                : 56.0;
     return SizedBox(
       key: const Key('web-account-balance-card'),
       child: GradientCard(
         borderRadius: 30,
-        padding: const EdgeInsets.all(28),
+        padding: EdgeInsets.all(compact ? 22 : 28),
         child: fillHeight
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1551,17 +1733,17 @@ class _BalanceCard extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          fontSize: 28,
+                          fontSize: compact ? 24 : 28,
                         ),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: compact ? 18 : 24),
                   Expanded(
                     child: Center(
                       child: Text(
                         value,
                         style:
                             Theme.of(context).textTheme.displayMedium?.copyWith(
-                                  fontSize: 84,
+                                  fontSize: valueSize,
                                   height: 0.9,
                                 ),
                       ),
@@ -1576,21 +1758,21 @@ class _BalanceCard extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          fontSize: 28,
+                          fontSize: compact ? 24 : 28,
                         ),
                   ),
-                  const SizedBox(height: 54),
+                  SizedBox(height: compact ? 32 : 54),
                   Center(
                     child: Text(
                       value,
                       style:
                           Theme.of(context).textTheme.displayMedium?.copyWith(
-                                fontSize: 84,
+                                fontSize: valueSize,
                                 height: 0.9,
                               ),
                     ),
                   ),
-                  const SizedBox(height: 54),
+                  SizedBox(height: compact ? 32 : 54),
                 ],
               ),
       ),
@@ -1617,11 +1799,12 @@ class _PreferenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
     return SizedBox(
       key: const Key('web-account-preference-card'),
       child: GradientCard(
         borderRadius: 30,
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(compact ? 20 : 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.max,
@@ -1629,10 +1812,10 @@ class _PreferenceCard extends StatelessWidget {
             Text(
               isChinese ? '邮件通知' : 'Email Notifications',
               style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                    fontSize: 28,
+                    fontSize: compact ? 24 : 28,
                   ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: compact ? 16 : 20),
             _PreferenceTile(
               title: isChinese ? '到期邮件提醒' : 'Expiry Reminder',
               subtitle: isChinese
@@ -1641,7 +1824,7 @@ class _PreferenceCard extends StatelessWidget {
               value: expireReminder,
               onChanged: isSaving ? null : onExpireChanged,
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: compact ? 12 : 14),
             _PreferenceTile(
               title: isChinese ? '流量邮件提醒' : 'Traffic Reminder',
               subtitle: isChinese
@@ -1672,8 +1855,9 @@ class _PreferenceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(compact ? 16 : 18),
       decoration: BoxDecoration(
         color: AppColors.surfaceAlt.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(22),
@@ -1688,14 +1872,14 @@ class _PreferenceTile extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontSize: 18,
+                        fontSize: compact ? 17 : 18,
                       ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
+                        fontSize: compact ? 14 : 15,
                         height: 1.4,
                       ),
                 ),
@@ -1732,44 +1916,78 @@ class _RiskActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
+    final narrow = MediaQuery.of(context).size.width < 760;
     return GradientCard(
       borderRadius: 30,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(compact ? 20 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
+          if (narrow)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
                   title,
                   style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                        fontSize: 28,
+                        fontSize: compact ? 24 : 28,
                       ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              FilledButton(
-                onPressed: isLoading ? null : onPressed,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.warning,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: isLoading ? null : onPressed,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.warning,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                  ),
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(buttonLabel),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                          fontSize: compact ? 24 : 28,
+                        ),
                   ),
                 ),
-                child: isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(buttonLabel),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
+                const SizedBox(width: 16),
+                FilledButton(
+                  onPressed: isLoading ? null : onPressed,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.warning,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                  ),
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(buttonLabel),
+                ),
+              ],
+            ),
+          SizedBox(height: compact ? 18 : 22),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -1784,6 +2002,350 @@ class _RiskActionCard extends StatelessWidget {
                     height: 1.5,
                   ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureActionCard extends StatelessWidget {
+  const _FeatureActionCard({
+    required this.title,
+    required this.description,
+    required this.buttonLabel,
+    required this.onPressed,
+  });
+
+  final String title;
+  final String description;
+  final String buttonLabel;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
+    return GradientCard(
+      borderRadius: 30,
+      padding: EdgeInsets.all(compact ? 20 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                  fontSize: compact ? 24 : 28,
+                ),
+          ),
+          SizedBox(height: compact ? 12 : 14),
+          Text(
+            description,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+          ),
+          const SizedBox(height: 18),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _InlineActionCardButton(
+              label: buttonLabel,
+              onTap: onPressed,
+              emphasized: onPressed != null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TelegramBindDialog extends StatelessWidget {
+  const _TelegramBindDialog({
+    required this.isChinese,
+    required this.bindUrl,
+    required this.bindCommand,
+    required this.onOpenTelegram,
+    required this.onCopyCommand,
+  });
+
+  final bool isChinese;
+  final String? bindUrl;
+  final String? bindCommand;
+  final VoidCallback? onOpenTelegram;
+  final VoidCallback? onCopyCommand;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620),
+        child: GradientCard(
+          borderRadius: 32,
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isChinese ? '绑定 Telegram' : 'Connect Telegram',
+                style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                      fontSize: 34,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                isChinese
+                    ? '先打开 Telegram 机器人，再发送绑定命令完成关联。'
+                    : 'Open the Telegram bot first, then send the bind command.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.5,
+                    ),
+              ),
+              if (bindCommand != null && bindCommand!.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceAlt.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: SelectableText(
+                    bindCommand!,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 22),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _InlineActionCardButton(
+                    label: isChinese ? '关闭' : 'Close',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  if (onCopyCommand != null)
+                    _InlineActionCardButton(
+                      label: isChinese ? '复制命令' : 'Copy Command',
+                      emphasized: true,
+                      onTap: onCopyCommand,
+                    ),
+                  if (onOpenTelegram != null)
+                    _InlineActionCardButton(
+                      label: isChinese ? '打开 Telegram' : 'Open Telegram',
+                      emphasized: true,
+                      onTap: onOpenTelegram,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderDetailDialog extends StatelessWidget {
+  const _OrderDetailDialog({
+    required this.isChinese,
+    required this.detail,
+    this.onContinue,
+    this.onCancel,
+  });
+
+  final bool isChinese;
+  final WebOrderDetailData detail;
+  final VoidCallback? onContinue;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final planTitle =
+        detail.plan?.title ?? (isChinese ? '未命名套餐' : 'Untitled plan');
+    final paymentLabel = detail.paymentMethod?.label ??
+        (isChinese ? '未选择支付方式' : 'No payment method');
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: GradientCard(
+          borderRadius: 32,
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      isChinese ? '订单详情' : 'Order Details',
+                      style:
+                          Theme.of(context).textTheme.displayMedium?.copyWith(
+                                fontSize: 34,
+                              ),
+                    ),
+                  ),
+                  _StatusBadge(
+                    label: _orderStatusLabel(detail.stateCode, isChinese),
+                    color: detail.stateCode == 0
+                        ? AppColors.warning
+                        : AppColors.accent,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: [
+                  _MetaText(
+                    label: isChinese ? '订单号' : 'Order',
+                    value: detail.orderRef,
+                  ),
+                  _MetaText(
+                    label: isChinese ? '创建时间' : 'Created',
+                    value: Formatters.formatEpoch(detail.createdAt),
+                  ),
+                  _MetaText(
+                    label: isChinese ? '套餐' : 'Plan',
+                    value: planTitle,
+                  ),
+                  _MetaText(
+                    label: isChinese ? '周期' : 'Period',
+                    value: _periodLabel(detail.periodKey, isChinese),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  children: [
+                    _OrderDetailRow(
+                      label: isChinese ? '原价' : 'Original',
+                      value:
+                          '¥${Formatters.formatCurrency(detail.amountOriginal)}',
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '优惠金额' : 'Discount',
+                      value:
+                          '- ¥${Formatters.formatCurrency(detail.amountDiscountApplied)}',
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '余额抵扣' : 'Balance Used',
+                      value:
+                          '¥${Formatters.formatCurrency(detail.amountBalanceUsed)}',
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '剩余价值抵扣' : 'Surplus Credit',
+                      value:
+                          '¥${Formatters.formatCurrency(detail.amountSurplusCredit)}',
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '手续费' : 'Fee',
+                      value:
+                          '¥${Formatters.formatCurrency(detail.amountHandling)}',
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '退款金额' : 'Refund',
+                      value:
+                          '¥${Formatters.formatCurrency(detail.amountRefundValue)}',
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '支付方式' : 'Payment Method',
+                      value: paymentLabel,
+                      isLast: false,
+                    ),
+                    _OrderDetailRow(
+                      label: isChinese ? '实付金额' : 'Total Paid',
+                      value:
+                          '¥${Formatters.formatCurrency(detail.amountDueAfterFee)}',
+                      isLast: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _InlineActionCardButton(
+                    label: isChinese ? '关闭' : 'Close',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  if (detail.stateCode == 0 && onContinue != null)
+                    _InlineActionCardButton(
+                      label: isChinese ? '继续支付' : 'Continue',
+                      emphasized: true,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        onContinue!();
+                      },
+                    ),
+                  if (detail.stateCode == 0 && onCancel != null)
+                    _InlineActionCardButton(
+                      label: isChinese ? '取消订单' : 'Cancel',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        onCancel!();
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderDetailRow extends StatelessWidget {
+  const _OrderDetailRow({
+    required this.label,
+    required this.value,
+    this.isLast = false,
+  });
+
+  final String label;
+  final String value;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ],
       ),
@@ -1977,7 +2539,8 @@ class _TicketComposeDialogState extends State<_TicketComposeDialog> {
     final message = _messageController.text.trim();
     if (subject.isEmpty || message.isEmpty) {
       setState(() {
-        _error = widget.isChinese ? '请填写完整主题和内容。' : 'Fill in subject and message.';
+        _error =
+            widget.isChinese ? '请填写完整主题和内容。' : 'Fill in subject and message.';
       });
       return;
     }
@@ -2074,8 +2637,8 @@ class _TicketComposeDialogState extends State<_TicketComposeDialog> {
               const SizedBox(height: 22),
               _DialogButtonRow(
                 cancelLabel: widget.isChinese ? '取消' : 'Cancel',
-                confirmLabel:
-                    widget.confirmLabel ?? (widget.isChinese ? '提交工单' : 'Submit'),
+                confirmLabel: widget.confirmLabel ??
+                    (widget.isChinese ? '提交工单' : 'Submit'),
                 onCancel: () => Navigator.of(context).pop(),
                 onConfirm: _submit,
               ),
@@ -2239,160 +2802,162 @@ class _TicketDetailDialogState extends State<_TicketDetailDialog> {
             child: FutureBuilder<WebTicketDetailData>(
               future: _detailFuture,
               builder: (context, snapshot) {
-              if (snapshot.hasError) {
+                if (snapshot.hasError) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.isChinese ? '工单详情加载失败' : 'Ticket failed to load',
+                        style:
+                            Theme.of(context).textTheme.displayMedium?.copyWith(
+                                  fontSize: 30,
+                                ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        webErrorText(
+                          snapshot.error!,
+                          isChinese: widget.isChinese,
+                          context: WebErrorContext.pageLoad,
+                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                      const SizedBox(height: 24),
+                      _DialogButtonRow(
+                        cancelLabel: widget.isChinese ? '关闭' : 'Close',
+                        confirmLabel: widget.isChinese ? '重新加载' : 'Retry',
+                        onCancel: () => Navigator.of(context).pop(),
+                        onConfirm: _reload,
+                      ),
+                    ],
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+
+                final detail = snapshot.data!;
+                final timeline = <WebTicketMessageData>[
+                  WebTicketMessageData(
+                    messageId: 0,
+                    ticketId: detail.ticketId,
+                    isMine: true,
+                    body: detail.body,
+                    createdAt: detail.createdAt,
+                    updatedAt: detail.updatedAt,
+                  ),
+                  ...detail.messages,
+                ];
+
                 return Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.isChinese ? '工单详情加载失败' : 'Ticket failed to load',
-                      style:
-                          Theme.of(context).textTheme.displayMedium?.copyWith(
-                                fontSize: 30,
-                              ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            detail.subject,
+                            style: Theme.of(context)
+                                .textTheme
+                                .displayMedium
+                                ?.copyWith(fontSize: 30),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        _StatusBadge(
+                          label: _ticketStateLabel(
+                              detail.stateCode, widget.isChinese),
+                          color: detail.isClosed
+                              ? AppColors.accentWarm
+                              : AppColors.success,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      webErrorText(
-                        snapshot.error!,
-                        isChinese: widget.isChinese,
-                        context: WebErrorContext.pageLoad,
-                      ),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
+                    Wrap(
+                      spacing: 18,
+                      runSpacing: 10,
+                      children: [
+                        _MetaText(
+                          label: widget.isChinese ? '优先级' : 'Priority',
+                          value: _ticketPriorityLabel(
+                            detail.priorityLevel,
+                            widget.isChinese,
                           ),
+                        ),
+                        _MetaText(
+                          label: widget.isChinese ? '回复状态' : 'Reply status',
+                          value: _ticketReplyStatusLabel(
+                            detail.replyState,
+                            widget.isChinese,
+                          ),
+                        ),
+                        _MetaText(
+                          label: widget.isChinese ? '创建时间' : 'Created',
+                          value: Formatters.formatEpoch(detail.createdAt),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 24),
-                    _DialogButtonRow(
-                      cancelLabel: widget.isChinese ? '关闭' : 'Close',
-                      confirmLabel: widget.isChinese ? '重新加载' : 'Retry',
-                      onCancel: () => Navigator.of(context).pop(),
-                      onConfirm: _reload,
-                    ),
-                  ],
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              }
-
-              final detail = snapshot.data!;
-              final timeline = <WebTicketMessageData>[
-                WebTicketMessageData(
-                  messageId: 0,
-                  ticketId: detail.ticketId,
-                  isMine: true,
-                  body: detail.body,
-                  createdAt: detail.createdAt,
-                  updatedAt: detail.updatedAt,
-                ),
-                ...detail.messages,
-              ];
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          detail.subject,
-                          style: Theme.of(context)
-                              .textTheme
-                              .displayMedium
-                              ?.copyWith(fontSize: 30),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      _StatusBadge(
-                        label: _ticketStateLabel(detail.stateCode, widget.isChinese),
-                        color: detail.isClosed
-                            ? AppColors.accentWarm
-                            : AppColors.success,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 18,
-                    runSpacing: 10,
-                    children: [
-                      _MetaText(
-                        label: widget.isChinese ? '优先级' : 'Priority',
-                        value: _ticketPriorityLabel(
-                          detail.priorityLevel,
-                          widget.isChinese,
-                        ),
-                      ),
-                      _MetaText(
-                        label: widget.isChinese ? '回复状态' : 'Reply status',
-                        value: _ticketReplyStatusLabel(
-                          detail.replyState,
-                          widget.isChinese,
-                        ),
-                      ),
-                      _MetaText(
-                        label: widget.isChinese ? '创建时间' : 'Created',
-                        value: Formatters.formatEpoch(detail.createdAt),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: timeline
-                            .map(
-                              (message) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _TicketMessageBubble(
-                                  message: message,
-                                  isChinese: widget.isChinese,
+                    const SizedBox(height: 18),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: timeline
+                              .map(
+                                (message) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: _TicketMessageBubble(
+                                    message: message,
+                                    isChinese: widget.isChinese,
+                                  ),
                                 ),
-                              ),
-                            )
-                            .toList(),
+                              )
+                              .toList(),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _DialogCardButton(
-                          label: widget.isChinese ? '关闭窗口' : 'Close',
-                          emphasized: false,
-                          onTap: () => Navigator.of(context).pop(),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _DialogCardButton(
+                            label: widget.isChinese ? '关闭窗口' : 'Close',
+                            emphasized: false,
+                            onTap: () => Navigator.of(context).pop(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _DialogCardButton(
-                          label: widget.isChinese ? '回复工单' : 'Reply',
-                          emphasized: false,
-                          onTap: _isReplying ? () {} : () => _reply(detail),
-                        ),
-                      ),
-                      if (!detail.isClosed) ...[
                         const SizedBox(width: 12),
                         Expanded(
                           child: _DialogCardButton(
-                            label: widget.isChinese ? '关闭工单' : 'Close Ticket',
-                            emphasized: true,
-                            onTap:
-                                _isClosing ? () {} : () => _closeTicket(detail),
+                            label: widget.isChinese ? '回复工单' : 'Reply',
+                            emphasized: false,
+                            onTap: _isReplying ? () {} : () => _reply(detail),
                           ),
                         ),
+                        if (!detail.isClosed) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _DialogCardButton(
+                              label: widget.isChinese ? '关闭工单' : 'Close Ticket',
+                              emphasized: true,
+                              onTap: _isClosing
+                                  ? () {}
+                                  : () => _closeTicket(detail),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
                   ],
                 );
               },

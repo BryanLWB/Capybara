@@ -35,6 +35,7 @@ class WebAuthPage extends StatefulWidget {
 class _WebAuthPageState extends State<WebAuthPage> {
   late final PanelApi _api;
   late final ApiConfig _config;
+  final _formKey = GlobalKey<FormState>();
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -159,6 +160,17 @@ class _WebAuthPageState extends State<WebAuthPage> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  void _submitForm() {
+    final form = _formKey.currentState;
+    if (form != null && !form.validate()) {
+      return;
+    }
+    if (_loading) {
+      return;
+    }
+    _submit();
   }
 
   Future<void> _sendVerify() async {
@@ -309,136 +321,159 @@ class _WebAuthPageState extends State<WebAuthPage> {
     return GradientCard(
       padding: const EdgeInsets.all(28),
       borderRadius: 28,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Capybara',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                  fontSize: 34,
-                ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            _title(isChinese),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontSize: 16,
-                  color: AppColors.textSecondary,
-                ),
-          ),
-          const SizedBox(height: 28),
-          _buildTextField(
-            controller: _emailController,
-            label: isChinese ? '邮箱地址' : 'Email Address',
-            icon: Icons.email_outlined,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: _mode == WebAuthMode.login
-                ? TextInputAction.next
-                : TextInputAction.next,
-          ),
-          const SizedBox(height: 14),
-          if (_mode == WebAuthMode.register) ...[
-            _buildTextField(
-              controller: _inviteController,
-              label: isChinese ? '邀请码（可选）' : 'Invite Code (Optional)',
-              icon: Icons.redeem_outlined,
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 14),
-          ],
-          if (_mode != WebAuthMode.login) ...[
-            _buildTextField(
-              controller: _emailCodeController,
-              label: isChinese ? '邮箱验证码' : 'Email Verification Code',
-              icon: Icons.mark_email_read_outlined,
-              textInputAction: TextInputAction.next,
-              suffix: _buildVerifyButton(isChinese),
-            ),
-            const SizedBox(height: 14),
-          ],
-          _buildTextField(
-            controller: _mode == WebAuthMode.reset
-                ? _newPasswordController
-                : _passwordController,
-            label: _mode == WebAuthMode.reset
-                ? (isChinese ? '新密码' : 'New Password')
-                : (isChinese ? '密码' : 'Password'),
-            icon: Icons.lock_outline_rounded,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) {
-              if (!_loading) {
-                _submit();
-              }
-            },
-            obscureText:
-                _mode == WebAuthMode.reset ? _hideNewPassword : _hidePassword,
-            suffix: IconButton(
-              onPressed: () {
-                setState(() {
-                  if (_mode == WebAuthMode.reset) {
-                    _hideNewPassword = !_hideNewPassword;
-                  } else {
-                    _hidePassword = !_hidePassword;
-                  }
-                });
-              },
-              icon: Icon(
-                (_mode == WebAuthMode.reset ? _hideNewPassword : _hidePassword)
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          if (_mode == WebAuthMode.login)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => _setMode(WebAuthMode.reset),
-                child: Text(
-                  isChinese ? '忘记密码？' : 'Forgot Password?',
-                ),
-              ),
-            ),
-          if (_message != null) ...[
-            Text(
-              _message!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.accentWarm,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          SizedBox(
-            height: 54,
-            child: ElevatedButton(
-              onPressed: _loading ? null : _submit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              child: _loading
-                  ? const CapybaraLoader(size: 22, color: Colors.black)
-                  : Text(
-                      _submitLabel(isChinese),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+      child: AutofillGroup(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Capybara',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                      fontSize: 34,
                     ),
-            ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _title(isChinese),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontSize: 16,
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 28),
+              _buildTextField(
+                controller: _emailController,
+                label: isChinese ? '邮箱地址' : 'Email Address',
+                icon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [
+                  AutofillHints.username,
+                  AutofillHints.email,
+                ],
+                validator: (value) => _validateEmail(value, isChinese),
+              ),
+              const SizedBox(height: 14),
+              if (_mode == WebAuthMode.register) ...[
+                _buildTextField(
+                  controller: _inviteController,
+                  label: isChinese ? '邀请码（可选）' : 'Invite Code (Optional)',
+                  icon: Icons.redeem_outlined,
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (_mode != WebAuthMode.login) ...[
+                _buildTextField(
+                  controller: _emailCodeController,
+                  label: isChinese ? '邮箱验证码' : 'Email Verification Code',
+                  icon: Icons.mark_email_read_outlined,
+                  textInputAction: TextInputAction.next,
+                  validator: (value) => _validateRequired(
+                    value,
+                    zhLabel: '邮箱验证码',
+                    enLabel: 'Email verification code',
+                    isChinese: isChinese,
+                  ),
+                  suffix: _buildVerifyButton(isChinese),
+                ),
+                const SizedBox(height: 14),
+              ],
+              _buildTextField(
+                controller: _mode == WebAuthMode.reset
+                    ? _newPasswordController
+                    : _passwordController,
+                label: _mode == WebAuthMode.reset
+                    ? (isChinese ? '新密码' : 'New Password')
+                    : (isChinese ? '密码' : 'Password'),
+                icon: Icons.lock_outline_rounded,
+                textInputAction: TextInputAction.done,
+                autofillHints: _mode == WebAuthMode.reset
+                    ? const [AutofillHints.newPassword]
+                    : const [AutofillHints.password],
+                onSubmitted: (_) => _submitForm(),
+                validator: (value) => _validateRequired(
+                  value,
+                  zhLabel: _mode == WebAuthMode.reset ? '新密码' : '密码',
+                  enLabel:
+                      _mode == WebAuthMode.reset ? 'New password' : 'Password',
+                  isChinese: isChinese,
+                ),
+                obscureText: _mode == WebAuthMode.reset
+                    ? _hideNewPassword
+                    : _hidePassword,
+                suffix: IconButton(
+                  onPressed: () {
+                    setState(() {
+                      if (_mode == WebAuthMode.reset) {
+                        _hideNewPassword = !_hideNewPassword;
+                      } else {
+                        _hidePassword = !_hidePassword;
+                      }
+                    });
+                  },
+                  icon: Icon(
+                    (_mode == WebAuthMode.reset
+                            ? _hideNewPassword
+                            : _hidePassword)
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (_mode == WebAuthMode.login)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _setMode(WebAuthMode.reset),
+                    child: Text(
+                      isChinese ? '忘记密码？' : 'Forgot Password?',
+                    ),
+                  ),
+                ),
+              if (_message != null) ...[
+                Text(
+                  _message!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.accentWarm,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              SizedBox(
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _submitForm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  child: _loading
+                      ? const CapybaraLoader(size: 22, color: Colors.black)
+                      : Text(
+                          _submitLabel(isChinese),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              _buildModeFooter(isChinese),
+            ],
           ),
-          const SizedBox(height: 18),
-          _buildModeFooter(isChinese),
-        ],
+        ),
       ),
     );
   }
@@ -510,14 +545,18 @@ class _WebAuthPageState extends State<WebAuthPage> {
     bool obscureText = false,
     TextInputType? keyboardType,
     TextInputAction? textInputAction,
+    Iterable<String>? autofillHints,
+    String? Function(String?)? validator,
     ValueChanged<String>? onSubmitted,
     Widget? suffix,
   }) {
-    return TextField(
+    return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
-      onSubmitted: onSubmitted,
+      autofillHints: autofillHints,
+      validator: validator,
+      onFieldSubmitted: onSubmitted,
       obscureText: obscureText,
       style: const TextStyle(color: AppColors.textPrimary),
       decoration: InputDecoration(
@@ -526,6 +565,29 @@ class _WebAuthPageState extends State<WebAuthPage> {
         suffixIcon: suffix,
       ),
     );
+  }
+
+  String? _validateEmail(String? value, bool isChinese) {
+    final input = value?.trim() ?? '';
+    if (input.isEmpty) {
+      return isChinese ? '请输入邮箱地址' : 'Enter your email address';
+    }
+    if (!input.contains('@')) {
+      return isChinese ? '请输入正确的邮箱地址' : 'Enter a valid email address';
+    }
+    return null;
+  }
+
+  String? _validateRequired(
+    String? value, {
+    required String zhLabel,
+    required String enLabel,
+    required bool isChinese,
+  }) {
+    if ((value?.trim() ?? '').isEmpty) {
+      return isChinese ? '请输入$zhLabel' : 'Enter $enLabel';
+    }
+    return null;
   }
 
   String _title(bool isChinese) {

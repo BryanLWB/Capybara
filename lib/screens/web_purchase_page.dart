@@ -14,6 +14,7 @@ import '../widgets/animated_card.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
 import '../widgets/rich_content_view.dart';
+import '../widgets/web_layout_metrics.dart';
 import '../widgets/web_page_frame.dart';
 import '../widgets/web_page_hero.dart';
 
@@ -46,8 +47,11 @@ typedef WebOrderStatusLoader = Future<int> Function(String orderRef);
 typedef WebPaymentLauncher = Future<bool> Function(Uri uri);
 typedef WebOrdersLoader = Future<List<WebOrderListItemData>> Function();
 typedef WebOrderCanceler = Future<void> Function(String orderRef);
+typedef WebActiveSubscriptionPlanLoader = Future<int?> Function();
 
 enum _PurchaseStage { catalog, orders, orderSetup, checkout, paymentPending }
+
+enum _CheckoutOrigin { orderSetup, orderList, externalOrder }
 
 class WebPurchasePage extends StatefulWidget {
   const WebPurchasePage({
@@ -66,6 +70,7 @@ class WebPurchasePage extends StatefulWidget {
     this.paymentLauncher,
     this.ordersLoader,
     this.orderCanceler,
+    this.activeSubscriptionPlanLoader,
   });
 
   final String? initialOrderRef;
@@ -82,6 +87,7 @@ class WebPurchasePage extends StatefulWidget {
   final WebPaymentLauncher? paymentLauncher;
   final WebOrdersLoader? ordersLoader;
   final WebOrderCanceler? orderCanceler;
+  final WebActiveSubscriptionPlanLoader? activeSubscriptionPlanLoader;
 
   @override
   State<WebPurchasePage> createState() => _WebPurchasePageState();
@@ -101,6 +107,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
   List<WebPaymentMethodData> _paymentMethods = const <WebPaymentMethodData>[];
   WebPaymentMethodData? _selectedPaymentMethod;
   WebCheckoutActionData? _checkoutAction;
+  _CheckoutOrigin _checkoutOrigin = _CheckoutOrigin.orderSetup;
   String? _message;
   String? _messageActionLabel;
   VoidCallback? _messageOnTap;
@@ -124,7 +131,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     if (initialOrderRef != null && initialOrderRef.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        unawaited(_openExistingOrder(initialOrderRef, widget.initialFallbackPlan));
+        unawaited(
+            _openExistingOrder(initialOrderRef, widget.initialFallbackPlan));
       });
     }
   }
@@ -189,6 +197,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
 
   Widget _buildCatalog(BuildContext context) {
     final isChinese = _isChinese(context);
+    final width = MediaQuery.of(context).size.width;
+    final gap = WebLayoutMetrics.sectionGap(width);
     return FutureBuilder<List<WebPlanViewData>>(
       future: _plansFuture,
       builder: (context, snapshot) {
@@ -235,7 +245,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            SizedBox(height: gap),
             if (filteredPlans.isEmpty)
               _EmptyPanel(
                 icon: Icons.inventory_2_outlined,
@@ -250,9 +260,14 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                   final width = constraints.maxWidth;
                   final crossAxisCount = width >= 1320
                       ? 3
-                      : width >= 860
+                      : width >= 820
                           ? 2
                           : 1;
+                  final mainAxisExtent = crossAxisCount == 1
+                      ? (width >= 640 ? 356.0 : 366.0)
+                      : width >= 1180
+                          ? 356.0
+                          : 368.0;
 
                   return GridView.builder(
                     shrinkWrap: true,
@@ -261,7 +276,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                       crossAxisCount: crossAxisCount,
                       mainAxisSpacing: 16,
                       crossAxisSpacing: 16,
-                      mainAxisExtent: 390,
+                      mainAxisExtent: mainAxisExtent,
                     ),
                     itemCount: filteredPlans.length,
                     itemBuilder: (context, index) {
@@ -359,30 +374,72 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         GradientCard(
           borderRadius: 28,
           padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _couponController,
-                  enabled: !_isBusy,
-                  decoration: InputDecoration(
-                    labelText: isChinese ? '优惠券码' : 'Coupon code',
-                    helperText: _couponMessage,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final validateLabel = isChinese ? '验证' : 'Validate';
+              final buttonWidth = _estimateInlineButtonWidth(
+                context,
+                validateLabel,
+                compact: true,
+              );
+              final stacked = buttonWidth + 220 > constraints.maxWidth;
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: _couponController,
+                      enabled: !_isBusy,
+                      decoration: InputDecoration(
+                        labelText: isChinese ? '优惠券码' : 'Coupon code',
+                        helperText: _couponMessage,
+                      ),
+                      onChanged: (_) {
+                        if (_couponMessage != null) {
+                          setState(() => _couponMessage = null);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _InlineButton(
+                      label: validateLabel,
+                      isLoading: _isCheckingCoupon,
+                      lowEmphasis: true,
+                      expand: true,
+                      compact: true,
+                      onTap: _isBusy ? null : _validateCoupon,
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _couponController,
+                      enabled: !_isBusy,
+                      decoration: InputDecoration(
+                        labelText: isChinese ? '优惠券码' : 'Coupon code',
+                        helperText: _couponMessage,
+                      ),
+                      onChanged: (_) {
+                        if (_couponMessage != null) {
+                          setState(() => _couponMessage = null);
+                        }
+                      },
+                    ),
                   ),
-                  onChanged: (_) {
-                    if (_couponMessage != null) {
-                      setState(() => _couponMessage = null);
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              _InlineButton(
-                label: isChinese ? '验证' : 'Validate',
-                isLoading: _isCheckingCoupon,
-                onTap: _isBusy ? null : _validateCoupon,
-              ),
-            ],
+                  const SizedBox(width: 12),
+                  _InlineButton(
+                    label: validateLabel,
+                    isLoading: _isCheckingCoupon,
+                    lowEmphasis: true,
+                    compact: true,
+                    onTap: _isBusy ? null : _validateCoupon,
+                  ),
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 16),
@@ -489,9 +546,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                   order: order,
                   isChinese: isChinese,
                   isBusy: _busyOrderRef == order.orderRef,
-                  onContinue: order.isPending
-                      ? () => _continueOrder(order)
-                      : null,
+                  onContinue:
+                      order.isPending ? () => _continueOrder(order) : null,
                   onCancel: order.isPending ? () => _cancelOrder(order) : null,
                 ),
               ),
@@ -532,8 +588,10 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     }
 
     final method = _selectedPaymentMethod;
-    final fee = method == null ? 0 : method.feeFor(order.amountTotal);
-    final payable = order.amountTotal + fee;
+    final fee = method == null
+        ? order.amountHandling
+        : method.feeFor(order.amountDueBeforeFee);
+    final payable = order.amountDueBeforeFee + fee;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,8 +601,10 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
           subtitle: isChinese
               ? '选择你想使用的支付方式完成结算。'
               : 'Choose your preferred payment method to complete checkout.',
-          label: isChinese ? '返回周期选择' : 'Back',
-          onTap: () => setState(() => _stage = _PurchaseStage.orderSetup),
+          label: _checkoutOrigin == _CheckoutOrigin.orderSetup
+              ? (isChinese ? '返回周期选择' : 'Back')
+              : (isChinese ? '返回订单' : 'Back to orders'),
+          onTap: _handleCheckoutBack,
         ),
         const SizedBox(height: 16),
         LayoutBuilder(
@@ -567,11 +627,15 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                     ),
                     _InfoRowData(
                       isChinese ? '订阅价格' : 'Price',
-                      _money(order.amountTotal + order.amountDiscount),
+                      _money(order.amountOriginal),
                     ),
                     _InfoRowData(
                       isChinese ? '优惠金额' : 'Discount',
-                      '- ${_money(order.amountDiscount)}',
+                      '- ${_money(order.amountDiscountApplied)}',
+                    ),
+                    _InfoRowData(
+                      isChinese ? '使用余额' : 'Balance Used',
+                      _money(order.amountBalanceUsed),
                     ),
                   ],
                 ),
@@ -591,10 +655,14 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                       isChinese ? '创建时间' : 'Created',
                       Formatters.formatEpoch(order.createdAt),
                     ),
-                    _InfoRowData(isChinese ? '使用余额' : 'Balance',
-                        _money(order.amountBalance)),
-                    _InfoRowData(isChinese ? '抵扣金额' : 'Deduction',
-                        _money(order.amountSurplus)),
+                    _InfoRowData(
+                      isChinese ? '使用余额' : 'Balance',
+                      _money(order.amountBalanceUsed),
+                    ),
+                    _InfoRowData(
+                      isChinese ? '剩余价值抵扣' : 'Surplus Credit',
+                      _money(order.amountSurplusCredit),
+                    ),
                     _InfoRowData(isChinese ? '手续费' : 'Fee', _money(fee)),
                   ],
                 ),
@@ -626,7 +694,11 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                     ),
                     _InfoRowData(
                       isChinese ? '订阅价格' : 'Price',
-                      _money(order.amountTotal + order.amountDiscount),
+                      _money(order.amountOriginal),
+                    ),
+                    _InfoRowData(
+                      isChinese ? '优惠金额' : 'Discount',
+                      '- ${_money(order.amountDiscountApplied)}',
                     ),
                   ],
                 ),
@@ -655,7 +727,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         _PaymentMethodsCard(
           methods: _paymentMethods,
           selected: method,
-          amountCents: order.amountTotal,
+          amountCents: order.amountDueBeforeFee,
           isChinese: isChinese,
           onSelected: (value) => setState(() => _selectedPaymentMethod = value),
         ),
@@ -823,6 +895,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _clearMessage();
     });
     try {
+      _checkoutOrigin = _CheckoutOrigin.externalOrder;
       await _loadCheckoutData(orderRef, fallbackPlan);
     } catch (error) {
       if (!mounted) return;
@@ -885,6 +958,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _paymentMethods = const <WebPaymentMethodData>[];
       _selectedPaymentMethod = null;
       _checkoutAction = null;
+      _checkoutOrigin = _CheckoutOrigin.orderSetup;
       _couponController.clear();
       _couponMessage = null;
       _clearMessage();
@@ -960,6 +1034,10 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     final couponCode = _couponController.text.trim().isEmpty
         ? null
         : _couponController.text.trim();
+    final confirmed = await _confirmPlanChangeIfNeeded(plan, period);
+    if (!confirmed || !mounted) {
+      return;
+    }
     setState(() {
       _isBusy = true;
       _clearMessage();
@@ -971,6 +1049,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         period.key,
         couponCode,
       );
+      _checkoutOrigin = _CheckoutOrigin.orderSetup;
       await _loadCheckoutData(tradeNo, plan);
     } on PendingOrderExistsException {
       final recovered = await _recoverPendingOrder(plan, period, couponCode);
@@ -979,7 +1058,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
           _message = _isChinese(context)
               ? '检测到已有待支付订单，请前往我的订单继续处理。'
               : 'A pending order already exists.';
-          _messageActionLabel = _isChinese(context) ? '查看我的订单' : 'Open My Orders';
+          _messageActionLabel =
+              _isChinese(context) ? '查看我的订单' : 'Open My Orders';
           _messageOnTap = widget.onOpenUserOrders ?? _openOrders;
         });
       }
@@ -1008,6 +1088,46 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     String? couponCode,
   ) async {
     return _facade.createOrder(planId, periodKey, couponCode);
+  }
+
+  Future<int?> _loadActiveSubscriptionPlanIdFromApi() {
+    return _facade.loadActiveSubscriptionPlanId();
+  }
+
+  Future<bool> _confirmPlanChangeIfNeeded(
+    WebPlanViewData plan,
+    WebPlanPeriod period,
+  ) async {
+    if (period.key == 'reset_price') {
+      return true;
+    }
+    if (widget.activeSubscriptionPlanLoader == null &&
+        widget.orderCreator != null) {
+      return true;
+    }
+    final loader =
+        widget.activeSubscriptionPlanLoader ?? _loadActiveSubscriptionPlanIdFromApi;
+    final currentPlanId = await loader();
+    if (!mounted || currentPlanId == null || currentPlanId <= 0) {
+      return true;
+    }
+    if (currentPlanId == plan.id) {
+      return true;
+    }
+    final isChinese = _isChinese(context);
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => _OrderConfirmDialog(
+            title: isChinese ? '请确认订阅变更' : 'Confirm subscription change',
+            message: isChinese
+                ? '当前已有有效订阅。继续购买新的套餐后，现有订阅将被覆盖。'
+                : 'You already have an active subscription. Continuing will replace the current subscription.',
+            cancelLabel: isChinese ? '取消' : 'Cancel',
+            confirmLabel: isChinese ? '继续购买' : 'Continue',
+          ),
+        ) ??
+        false;
+    return confirmed;
   }
 
   Future<bool> _recoverPendingOrder(
@@ -1088,6 +1208,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _clearMessage();
     });
     try {
+      _checkoutOrigin = _CheckoutOrigin.orderList;
       await _loadCheckoutData(order.orderRef, order.plan);
     } catch (error) {
       if (!mounted) return;
@@ -1158,7 +1279,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
 
   bool _canCheckout(WebOrderDetailData order) {
     if (_isBusy) return false;
-    if (order.amountTotal <= 0) return true;
+    if (order.amountDueBeforeFee <= 0) return true;
     return _selectedPaymentMethod != null;
   }
 
@@ -1166,7 +1287,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     final order = _order;
     if (order == null) return;
     final method = _selectedPaymentMethod;
-    if (order.amountTotal > 0 && method == null) {
+    if (order.amountDueBeforeFee > 0 && method == null) {
       setState(() {
         _message =
             _isChinese(context) ? '请选择支付方式。' : 'Select a payment method.';
@@ -1342,6 +1463,35 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     });
   }
 
+  void _handleCheckoutBack() {
+    switch (_checkoutOrigin) {
+      case _CheckoutOrigin.orderSetup:
+        setState(() {
+          _stage = _PurchaseStage.orderSetup;
+          _clearMessage();
+        });
+        break;
+      case _CheckoutOrigin.orderList:
+        setState(() {
+          _stage = _PurchaseStage.orders;
+          _ordersFuture ??= _loadOrders();
+          _clearMessage();
+        });
+        break;
+      case _CheckoutOrigin.externalOrder:
+        if (widget.onOpenUserOrders != null) {
+          widget.onOpenUserOrders!.call();
+          return;
+        }
+        setState(() {
+          _stage = _PurchaseStage.orders;
+          _ordersFuture ??= _loadOrders();
+          _clearMessage();
+        });
+        break;
+    }
+  }
+
   String _money(int cents) => '¥${Formatters.formatCurrency(cents)}';
 
   String _periodLabel(String key, bool isChinese) {
@@ -1448,10 +1598,12 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
     final primary = plan.primaryPeriod;
     return AnimatedCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(compact ? 18 : 20),
       enableBreathing: selected,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1465,7 +1617,7 @@ class _PlanCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                        fontSize: 26,
+                        fontSize: compact ? 24 : 26,
                         height: 1.05,
                       ),
                 ),
@@ -1486,7 +1638,7 @@ class _PlanCard extends StatelessWidget {
           const SizedBox(height: 18),
           ...plan.features.take(3).map(
                 (feature) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: EdgeInsets.only(bottom: compact ? 6 : 8),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1527,7 +1679,7 @@ class _PlanCard extends StatelessWidget {
             style:
                 Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
           ),
-          const SizedBox(height: 18),
+          SizedBox(height: compact ? 14 : 18),
           Row(
             children: [
               Text(
@@ -1541,12 +1693,12 @@ class _PlanCard extends StatelessWidget {
               Text(
                 primary?.moneyLabel ?? '¥0',
                 style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                      fontSize: 34,
+                      fontSize: compact ? 30 : 34,
                     ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: compact ? 12 : 14),
           _OutlineAction(
             label: isChinese ? '立即购买' : 'Purchase Now',
             selected: selected,
@@ -1570,17 +1722,19 @@ class _PlanSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasRichContent = plan.richContentHtml.trim().isNotEmpty;
+    final width = MediaQuery.of(context).size.width;
+    final compact = WebLayoutMetrics.compact(width);
 
     return GradientCard(
       borderRadius: 32,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(compact ? 20 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             plan.title,
             style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                  fontSize: 30,
+                  fontSize: compact ? 28 : 30,
                 ),
           ),
           const SizedBox(height: 12),
@@ -1590,10 +1744,10 @@ class _PlanSummaryCard extends StatelessWidget {
                 : 'Traffic ${plan.trafficLabel}',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
-                  fontSize: 18,
+                  fontSize: compact ? 16 : 18,
                 ),
           ),
-          const SizedBox(height: 28),
+          SizedBox(height: compact ? 20 : 28),
           if (hasRichContent)
             RichContentView(
               key: Key('web-plan-rich-content-${plan.id}'),
@@ -1602,7 +1756,7 @@ class _PlanSummaryCard extends StatelessWidget {
           else
             ...plan.features.take(5).map(
                   (feature) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
+                    padding: EdgeInsets.only(bottom: compact ? 8 : 10),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1628,7 +1782,7 @@ class _PlanSummaryCard extends StatelessWidget {
                     ),
                   ),
                 ),
-          const SizedBox(height: 24),
+          SizedBox(height: compact ? 20 : 24),
           Text(
             plan.deviceLimit == null
                 ? (isChinese
@@ -1660,22 +1814,23 @@ class _PeriodSelectorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
     return GradientCard(
       borderRadius: 32,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(compact ? 20 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             isChinese ? '选择周期' : 'Choose period',
             style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                  fontSize: 26,
+                  fontSize: compact ? 24 : 26,
                 ),
           ),
-          const SizedBox(height: 18),
+          SizedBox(height: compact ? 14 : 18),
           ...periods.map(
             (period) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: EdgeInsets.only(bottom: compact ? 10 : 12),
               child: _SelectableRow(
                 selected: selected.key == period.key,
                 onTap: () => onSelected(period),
@@ -1717,9 +1872,10 @@ class _OrderInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
     return GradientCard(
       borderRadius: 32,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(compact ? 20 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1731,17 +1887,17 @@ class _OrderInfoCard extends StatelessWidget {
                 child: Text(
                   title,
                   style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                        fontSize: 26,
+                        fontSize: compact ? 24 : 26,
                       ),
                 ),
               ),
               if (trailing != null) trailing!,
             ],
           ),
-          const SizedBox(height: 22),
+          SizedBox(height: compact ? 18 : 22),
           ...rows.map(
             (row) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
+              padding: EdgeInsets.only(bottom: compact ? 12 : 14),
               child: Row(
                 children: [
                   Expanded(
@@ -2014,26 +2170,67 @@ class _CheckoutBar extends StatelessWidget {
     return GradientCard(
       borderRadius: 30,
       padding: const EdgeInsets.all(18),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '总计：$amountLabel',
-              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final amountText = '总计：$amountLabel';
+          final amountStyle =
+              Theme.of(context).textTheme.displayMedium?.copyWith(
                     fontSize: 24,
+                  ) ??
+                  const TextStyle(fontSize: 24);
+          final amountWidth =
+              _measureTextWidth(context, amountText, amountStyle) + 4;
+          final buttonWidth = math.min(
+            320.0,
+            math.max(220.0, constraints.maxWidth * 0.44),
+          );
+          final stacked = amountWidth + 16 + buttonWidth > constraints.maxWidth;
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    amountText,
+                    style: amountStyle,
                   ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          SizedBox(
-            width: 320,
-            child: _InlineButton(
-              label: buttonLabel,
-              isLoading: isLoading,
-              onTap: onTap,
-            ),
-          ),
-        ],
+                ),
+                const SizedBox(height: 14),
+                _InlineButton(
+                  label: buttonLabel,
+                  isLoading: isLoading,
+                  expand: true,
+                  onTap: onTap,
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    amountText,
+                    style: amountStyle,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: buttonWidth,
+                child: _InlineButton(
+                  label: buttonLabel,
+                  isLoading: isLoading,
+                  onTap: onTap,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2046,6 +2243,8 @@ class _InlineButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.lowEmphasis = false,
+    this.expand = false,
+    this.compact = false,
   });
 
   final String label;
@@ -2053,29 +2252,59 @@ class _InlineButton extends StatelessWidget {
   final IconData? icon;
   final bool isLoading;
   final bool lowEmphasis;
+  final bool expand;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null && !isLoading;
     return AnimatedCard(
       onTap: isLoading ? null : onTap,
       enableBreathing: false,
       borderRadius: 18,
-      hoverScale: 1.01,
-      baseBorderColor: lowEmphasis ? AppColors.border : AppColors.accent,
+      hoverScale: 1.008,
+      baseBorderColor: enabled
+          ? (lowEmphasis
+              ? AppColors.border.withValues(alpha: 0.95)
+              : AppColors.accent.withValues(alpha: 0.48))
+          : AppColors.border.withValues(alpha: 0.9),
       hoverBorderColor: AppColors.accent,
       gradientColors: lowEmphasis
           ? [
-              AppColors.surface,
-              AppColors.surfaceAlt.withValues(alpha: 0.8),
+              AppColors.surfaceAlt.withValues(alpha: 0.98),
+              AppColors.surface.withValues(alpha: 0.98),
             ]
           : [
-              AppColors.accent.withValues(alpha: 0.92),
-              AppColors.accent.withValues(alpha: 0.72),
+              const Color(0xFF1C1F27),
+              const Color(0xFF15171D),
             ],
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      baseBoxShadows: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.22),
+          blurRadius: 18,
+          offset: const Offset(0, 10),
+        ),
+      ],
+      hoverBoxShadows: [
+        BoxShadow(
+          color: AppColors.accent.withValues(alpha: 0.12),
+          blurRadius: 24,
+          offset: const Offset(0, 12),
+        ),
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.26),
+          blurRadius: 20,
+          offset: const Offset(0, 10),
+        ),
+      ],
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 16 : 18,
+        vertical: compact ? 12 : 14,
+      ),
       child: Center(
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (isLoading)
               const SizedBox(
@@ -2084,12 +2313,20 @@ class _InlineButton extends StatelessWidget {
                 child: CapybaraLoader(size: 18),
               )
             else if (icon != null)
-              Icon(icon, size: 18, color: AppColors.textPrimary),
+              Icon(
+                icon,
+                size: 18,
+                color: enabled
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+              ),
             if (isLoading || icon != null) const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: enabled
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -2098,6 +2335,29 @@ class _InlineButton extends StatelessWidget {
       ),
     );
   }
+}
+
+double _measureTextWidth(
+  BuildContext context,
+  String text,
+  TextStyle? style,
+) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    maxLines: 1,
+    textDirection: Directionality.of(context),
+  )..layout();
+  return painter.width;
+}
+
+double _estimateInlineButtonWidth(
+  BuildContext context,
+  String label, {
+  bool compact = false,
+}) {
+  final textStyle = const TextStyle(fontWeight: FontWeight.w800);
+  final horizontal = compact ? 16.0 : 18.0;
+  return _measureTextWidth(context, label, textStyle) + horizontal * 2 + 8;
 }
 
 class _OutlineAction extends StatelessWidget {
@@ -2241,7 +2501,7 @@ class _OrderListCard extends StatelessWidget {
               ),
               _OrderMetaItem(
                 label: isChinese ? '金额' : 'Amount',
-                value: '¥${Formatters.formatCurrency(order.amountTotal)}',
+                value: '¥${Formatters.formatCurrency(order.amountDueAfterFee)}',
               ),
               _OrderMetaItem(
                 label: isChinese ? '创建时间' : 'Created',
@@ -2285,8 +2545,9 @@ class _OrderMetaItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = WebLayoutMetrics.compact(MediaQuery.of(context).size.width);
     return SizedBox(
-      width: 220,
+      width: compact ? 170 : 220,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

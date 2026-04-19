@@ -30,7 +30,7 @@
     },
     {
       "app_route": "GET /api/app/v1/account/preferences",
-      "upstream_route": "GET /api/v1/user/comm/config"
+      "upstream_route": "GET /api/v1/user/comm/config (+ optional GET /api/v1/user/telegram/getBotInfo and GET /api/v1/user/getSubscribe for Telegram binding helpers)"
     },
     {
       "app_route": "PATCH /api/app/v1/account/notifications",

@@ -2,6 +2,7 @@ import '../models/help_article.dart';
 import '../models/user_info.dart';
 import '../models/web_account_view_data.dart';
 import '../models/web_client_download.dart';
+import '../models/web_client_import_option.dart';
 import '../models/web_home_view_data.dart';
 import '../models/web_invite_view_data.dart';
 import '../models/web_purchase_view_data.dart';
@@ -107,9 +108,80 @@ class WebAppFacade {
         .toList();
   }
 
+  Future<List<WebClientImportOptionData>> loadClientImportOptions(
+    String platform,
+  ) async {
+    final response = await _api.getClientImportOptions(platform);
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    return (data['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => WebClientImportOptionData.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where(
+          (item) =>
+              item.supported &&
+              item.displayName.isNotEmpty &&
+              item.actionValue.isNotEmpty,
+        )
+        .toList();
+  }
+
   Future<WebAccountProfileData> loadAccountProfile() async {
     await _config.refreshSessionCache();
-    return WebAccountProfileData.fromResponse(await _api.getProfile());
+    final responses = await Future.wait<Map<String, dynamic>>([
+      _api.getProfile(),
+      _api.getUserConfig(),
+    ]);
+    final profileData = Map<String, dynamic>.from(
+      responses[0]['data'] as Map? ?? const {},
+    );
+    final configData = Map<String, dynamic>.from(
+      responses[1]['data'] as Map? ?? const {},
+    );
+    return WebAccountProfileData.fromResponse(<String, dynamic>{
+      'data': <String, dynamic>{
+        'account': Map<String, dynamic>.from(
+          profileData['account'] as Map? ?? const {},
+        ),
+        'config': Map<String, dynamic>.from(
+          configData['config'] as Map? ?? const {},
+        ),
+      },
+    });
+  }
+
+  Future<int?> loadActiveSubscriptionPlanId() async {
+    await _config.refreshSessionCache();
+    final responses = await Future.wait<Map<String, dynamic>>([
+      _api.getProfile(),
+      _api.getSubscriptionSummary(),
+    ]);
+    final accountData = Map<String, dynamic>.from(
+      responses[0]['data'] as Map? ?? const {},
+    );
+    final subscriptionData = Map<String, dynamic>.from(
+      responses[1]['data'] as Map? ?? const {},
+    );
+    final account = Map<String, dynamic>.from(
+      accountData['account'] as Map? ?? const {},
+    );
+    final subscription = Map<String, dynamic>.from(
+      subscriptionData['subscription'] as Map? ?? const {},
+    );
+    final planId = _toInt(account['plan_id'] ?? subscription['plan_id']);
+    final totalBytes = _toInt(subscription['total_bytes']);
+    final expiryAt = _toInt(subscription['expiry_at']);
+    final nowEpoch = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (planId <= 0 || totalBytes <= 0) {
+      return null;
+    }
+    if (expiryAt > 0 && expiryAt < nowEpoch) {
+      return null;
+    }
+    return planId;
   }
 
   Future<WebAccountProfileData> updateNotifications({
@@ -135,11 +207,14 @@ class WebAppFacade {
     await _api.resetSubscriptionSecurity();
   }
 
-  Future<WebInviteViewData> loadInviteData() async {
+  Future<WebInviteViewData> loadInviteData({
+    int page = 1,
+    int pageSize = 10,
+  }) async {
     await _config.refreshSessionCache();
     final responses = await Future.wait<Map<String, dynamic>>([
       _api.getInviteOverview(),
-      _api.getInviteRecords(),
+      _api.getInviteRecords(page: page, pageSize: pageSize),
     ]);
     return WebInviteViewData.fromResponses(responses[0], responses[1]);
   }

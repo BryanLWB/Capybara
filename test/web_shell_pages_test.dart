@@ -182,6 +182,136 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('web purchase order setup adapts coupon and checkout bar on narrow width',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(760, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          plansLoader: _loadTestPlans,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('验证'), findsOneWidget);
+    expect(find.textContaining('前去支付'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web purchase checkout returns to matching source page',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var openedUserOrders = false;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          key: const ValueKey('external-order-checkout'),
+          initialOrderRef: 'T20260414002',
+          initialFallbackPlan: (await _loadTestPlans()).first,
+          onOpenUserOrders: () => openedUserOrders = true,
+          plansLoader: _loadTestPlans,
+          orderDetailLoader: (orderRef, fallbackPlan) async =>
+              WebOrderDetailData(
+            orderRef: orderRef,
+            stateCode: 0,
+            periodKey: 'month_price',
+            amountTotal: 380,
+            amountPayable: 390,
+            amountDiscount: 0,
+            amountBalance: 0,
+            amountRefund: 0,
+            amountSurplus: 0,
+            amountHandling: 10,
+            createdAt: 1776150000,
+            plan: fallbackPlan,
+          ),
+          paymentMethodsLoader: () async => <WebPaymentMethodData>[
+            WebPaymentMethodData(
+              id: 1,
+              label: '支付宝',
+              provider: 'AlipayF2F',
+              feeFixedCents: 0,
+              feeRate: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('订单支付'), findsOneWidget);
+    await tester.tap(find.text('返回订单'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(openedUserOrders, isTrue);
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          key: const ValueKey('setup-checkout'),
+          plansLoader: _loadTestPlans,
+          orderCreator: (_, __, ___) async => 'T20260414003',
+          orderDetailLoader: (orderRef, fallbackPlan) async =>
+              WebOrderDetailData(
+            orderRef: orderRef,
+            stateCode: 0,
+            periodKey: 'month_price',
+            amountTotal: 380,
+            amountPayable: 390,
+            amountDiscount: 0,
+            amountBalance: 0,
+            amountRefund: 0,
+            amountSurplus: 0,
+            amountHandling: 10,
+            createdAt: 1776150000,
+            plan: fallbackPlan,
+          ),
+          paymentMethodsLoader: () async => <WebPaymentMethodData>[
+            WebPaymentMethodData(
+              id: 1,
+              label: '支付宝',
+              provider: 'AlipayF2F',
+              feeFixedCents: 0,
+              feeRate: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('订单支付'), findsOneWidget);
+    await tester.tap(find.text('返回周期选择'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('确认套餐'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('web purchase only recovers pending orders for pending conflict',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
@@ -325,6 +455,84 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(openedUserOrders, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web purchase confirms before replacing active subscription',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var createCalls = 0;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          plansLoader: _loadTestPlans,
+          activeSubscriptionPlanLoader: () async => 99,
+          orderCreator: (_, __, ___) async {
+            createCalls += 1;
+            return 'T20260414099';
+          },
+          orderDetailLoader: (orderRef, fallbackPlan) async =>
+              WebOrderDetailData(
+            orderRef: orderRef,
+            stateCode: 0,
+            periodKey: 'month_price',
+            amountTotal: 380,
+            amountPayable: 380,
+            amountDiscount: 0,
+            amountBalance: 0,
+            amountRefund: 0,
+            amountSurplus: 0,
+            amountHandling: 0,
+            createdAt: 1776150000,
+            plan: fallbackPlan,
+          ),
+          paymentMethodsLoader: () async => <WebPaymentMethodData>[
+            WebPaymentMethodData(
+              id: 1,
+              label: '支付宝',
+              provider: 'AlipayF2F',
+              feeFixedCents: 0,
+              feeRate: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('请确认订阅变更'), findsOneWidget);
+    expect(createCalls, 0);
+
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('确认套餐'), findsOneWidget);
+    expect(createCalls, 0);
+
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('继续购买'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(createCalls, 1);
+    expect(find.text('订单支付'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -914,6 +1122,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('web auth uses structured form widgets',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1200);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebAuthPage(
+          api: _FakePanelApi(),
+          onAuthed: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byType(Form), findsOneWidget);
+    expect(find.byType(AutofillGroup), findsOneWidget);
+    expect(find.byType(TextFormField), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('web auth submits login on enter and shows customer message',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
@@ -1044,6 +1278,123 @@ void main() {
     );
     expect(accountHeroTop.dy, lessThan(180));
     expect(find.text('用户中心'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web shell renders all navigation on first row when width allows',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(930, 1400);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('en'), Locale('zh')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: WebShell(
+          onLogout: () {},
+          initialSection: WebShellSection.home,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final userTop = tester.getTopLeft(find.text('用户')).dy;
+    final homeTop = tester.getTopLeft(find.text('主页')).dy;
+    final inviteTop = tester.getTopLeft(find.text('邀请')).dy;
+    final userLeft = tester.getTopLeft(find.text('用户')).dx;
+    final inviteLeft = tester.getTopLeft(find.text('邀请')).dx;
+
+    expect((userTop - homeTop).abs(), lessThan(24));
+    expect((inviteTop - homeTop).abs(), lessThan(24));
+    expect(userLeft, greaterThan(inviteLeft));
+    expect(find.text('用户'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web shell keeps account navigation on second row when only nav fits',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(650, 1400);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('en'), Locale('zh')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: WebShell(
+          onLogout: () {},
+          initialSection: WebShellSection.home,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final userTop = tester.getTopLeft(find.text('用户')).dy;
+    final homeTop = tester.getTopLeft(find.text('主页')).dy;
+    final inviteTop = tester.getTopLeft(find.text('邀请')).dy;
+    final logoutTop = tester.getTopLeft(find.text('退出登录')).dy;
+    final userLeft = tester.getTopLeft(find.text('用户')).dx;
+    final inviteLeft = tester.getTopLeft(find.text('邀请')).dx;
+    final homeCenter = tester.getCenter(find.text('主页')).dx;
+    final userCenter = tester.getCenter(find.text('用户')).dx;
+    final rowCenter = (homeCenter + userCenter) / 2;
+
+    expect(userTop, greaterThan(logoutTop));
+    expect((userTop - homeTop).abs(), lessThan(24));
+    expect((inviteTop - homeTop).abs(), lessThan(24));
+    expect(userLeft, greaterThan(inviteLeft));
+    expect((rowCenter - 325).abs(), lessThan(70));
+    expect(find.text('用户'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'web shell keeps account on first row between brand and logout when second row is full',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(450, 1400);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        supportedLocales: const [Locale('en'), Locale('zh')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: WebShell(
+          onLogout: () {},
+          initialSection: WebShellSection.home,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final brandCenter = tester.getCenter(find.text('Capybara'));
+    final userCenter = tester.getCenter(find.text('用户'));
+    final logoutCenter = tester.getCenter(find.text('退出登录'));
+    final logoutTop = tester.getTopLeft(find.text('退出登录')).dy;
+    final userTop = tester.getTopLeft(find.text('用户')).dy;
+    final helpTop = tester.getTopLeft(find.text('帮助')).dy;
+
+    expect((userTop - logoutTop).abs(), lessThan(24));
+    expect(helpTop, greaterThan(userTop));
+    expect(userCenter.dx, greaterThan(brandCenter.dx));
+    expect(userCenter.dx, lessThan(logoutCenter.dx));
+    expect(find.text('用户'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

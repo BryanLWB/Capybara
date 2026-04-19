@@ -104,6 +104,12 @@ String _fromError({
         : 'There is no commission available right now.';
   }
 
+  if (code == 'referrals.transfer_amount_invalid') {
+    return isChinese
+        ? '输入金额超出可转范围，请重新检查后再试。'
+        : 'The amount is outside the transferable range.';
+  }
+
   if (code == 'referrals.withdrawal_unavailable') {
     return isChinese
         ? '当前暂时无法申请提现，请确认佣金余额或联系在线客服。'

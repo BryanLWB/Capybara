@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import 'gradient_card.dart';
+import 'web_layout_metrics.dart';
 
 class WebPageHero extends StatelessWidget {
   const WebPageHero({
@@ -17,33 +18,48 @@ class WebPageHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final padding = WebLayoutMetrics.heroPadding(width);
+    final titleSize = WebLayoutMetrics.heroTitleSize(width);
+    final subtitleSize = WebLayoutMetrics.heroSubtitleSize(width);
+
     return SizedBox(
       key: const Key('web-page-hero'),
       width: double.infinity,
       child: GradientCard(
-        borderRadius: 32,
-        padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+        borderRadius: WebLayoutMetrics.heroRadius(width),
+        padding: padding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               title,
               style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                    fontSize: 42,
+                    fontSize: titleSize,
                     height: 1.05,
                   ),
             ),
-            const SizedBox(height: 14),
+            SizedBox(
+                height: width >= 980
+                    ? 10
+                    : width >= 640
+                        ? 12
+                        : 10),
             Text(
               subtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 17,
-                    height: 1.6,
+                    fontSize: subtitleSize,
+                    height: width >= 980 ? 1.45 : 1.6,
                     color: AppColors.textSecondary,
                   ),
             ),
             if (child != null) ...[
-              const SizedBox(height: 22),
+              SizedBox(
+                  height: width >= 980
+                      ? 16
+                      : width >= 640
+                          ? 20
+                          : 18),
               child!,
             ],
           ],
