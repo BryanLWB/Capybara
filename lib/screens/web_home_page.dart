@@ -424,12 +424,6 @@ class _WebHomePageState extends State<WebHomePage> {
         final isWide = WebLayoutMetrics.useWidePanels(width);
         final isMedium = WebLayoutMetrics.useMediumGrid(width);
         final compact = WebLayoutMetrics.compact(width);
-        final desktopPanelHeight = width >= 1360
-            ? 508.0
-            : width >= 1120
-                ? 470.0
-                : 444.0;
-
         return RefreshIndicator(
           onRefresh: () async {
             setState(() {
@@ -452,26 +446,20 @@ class _WebHomePageState extends State<WebHomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: SizedBox(
-                          height: desktopPanelHeight,
-                          child: _buildQuickUsageSection(
-                            context,
-                            isChinese,
-                            hasSubscription: data.hasSubscription,
-                            dense: true,
-                          ),
+                        child: _buildQuickUsageSection(
+                          context,
+                          isChinese,
+                          hasSubscription: data.hasSubscription,
+                          dense: true,
                         ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: SizedBox(
-                          height: desktopPanelHeight,
-                          child: _buildQuickLinksSection(
-                            context,
-                            isChinese,
-                            true,
-                            dense: true,
-                          ),
+                        child: _buildQuickLinksSection(
+                          context,
+                          isChinese,
+                          true,
+                          dense: true,
                         ),
                       ),
                     ],
@@ -1100,33 +1088,14 @@ class _WebHomePageState extends State<WebHomePage> {
             text: isChinese ? '快捷入口' : 'Shortcuts',
           ),
           SizedBox(height: dense ? 10 : 12),
-          if (dense)
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final rowSpacing = 12.0;
-                  final cardHeight = isMedium
-                      ? ((constraints.maxHeight - rowSpacing) / 2)
-                          .clamp(152.0, 220.0)
-                      : 140.0;
-
-                  return _buildQuickLinksGrid(
-                    context,
-                    cards: cards,
-                    isMedium: isMedium,
-                    mainAxisExtent: cardHeight,
-                  );
-                },
-              ),
-            )
-          else
-            _buildQuickLinksGrid(
-              context,
-              cards: cards,
-              isMedium: isMedium,
-              shrinkWrap: true,
-              mainAxisExtent: isMedium ? 172 : 140,
-            ),
+          _buildQuickLinksGrid(
+            context,
+            cards: cards,
+            isMedium: isMedium,
+            shrinkWrap: true,
+            mainAxisExtent:
+                isMedium ? (dense ? 156 : 172) : (dense ? 132 : 140),
+          ),
         ],
       ),
     );

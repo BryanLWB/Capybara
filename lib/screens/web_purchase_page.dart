@@ -48,6 +48,7 @@ typedef WebPaymentLauncher = Future<bool> Function(Uri uri);
 typedef WebOrdersLoader = Future<List<WebOrderListItemData>> Function();
 typedef WebOrderCanceler = Future<void> Function(String orderRef);
 typedef WebActiveSubscriptionPlanLoader = Future<int?> Function();
+typedef WebPaymentCompletedNavigateHome = void Function();
 
 enum _PurchaseStage { catalog, orders, orderSetup, checkout, paymentPending }
 
@@ -71,6 +72,7 @@ class WebPurchasePage extends StatefulWidget {
     this.ordersLoader,
     this.orderCanceler,
     this.activeSubscriptionPlanLoader,
+    this.onPaymentCompletedNavigateHome,
   });
 
   final String? initialOrderRef;
@@ -88,6 +90,7 @@ class WebPurchasePage extends StatefulWidget {
   final WebOrdersLoader? ordersLoader;
   final WebOrderCanceler? orderCanceler;
   final WebActiveSubscriptionPlanLoader? activeSubscriptionPlanLoader;
+  final WebPaymentCompletedNavigateHome? onPaymentCompletedNavigateHome;
 
   @override
   State<WebPurchasePage> createState() => _WebPurchasePageState();
@@ -856,9 +859,15 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                 runSpacing: 12,
                 children: [
                   _InlineButton(
-                    label: isChinese ? '我已完成支付' : 'I have paid',
+                    label: completed
+                        ? (isChinese ? '返回首页' : 'Back to Home')
+                        : (isChinese ? '我已完成支付' : 'I have paid'),
                     isLoading: _isBusy,
-                    onTap: order == null ? null : _checkPaymentOnce,
+                    onTap: order == null
+                        ? null
+                        : (completed
+                            ? _returnHomeAfterPayment
+                            : _checkPaymentOnce),
                   ),
                   _InlineButton(
                     label: isChinese ? '返回套餐' : 'Back to plans',
@@ -1105,8 +1114,8 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
         widget.orderCreator != null) {
       return true;
     }
-    final loader =
-        widget.activeSubscriptionPlanLoader ?? _loadActiveSubscriptionPlanIdFromApi;
+    final loader = widget.activeSubscriptionPlanLoader ??
+        _loadActiveSubscriptionPlanIdFromApi;
     final currentPlanId = await loader();
     if (!mounted || currentPlanId == null || currentPlanId <= 0) {
       return true;
@@ -1413,7 +1422,7 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     try {
       final state = await _loadOrderStatus(order.orderRef);
       if (state == 1 || state == 3) {
-        await _markPaymentComplete(order.orderRef);
+        await _markPaymentComplete(order.orderRef, navigateHome: true);
       } else if (mounted) {
         setState(() {
           _message = _isChinese(context)
@@ -1437,7 +1446,10 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
     return _facade.loadOrderStatus(orderRef);
   }
 
-  Future<void> _markPaymentComplete(String orderRef) async {
+  Future<void> _markPaymentComplete(
+    String orderRef, {
+    bool navigateHome = false,
+  }) async {
     final action = WebCheckoutActionData(
       kind: WebCheckoutActionKind.completed,
       code: -1,
@@ -1453,6 +1465,10 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       latest = _order;
     }
     if (!mounted) return;
+    if (navigateHome) {
+      _returnHomeAfterPayment();
+      return;
+    }
     setState(() {
       _checkoutAction = action;
       _order = latest;
@@ -1461,6 +1477,14 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
       _messageActionLabel = null;
       _messageOnTap = null;
     });
+  }
+
+  void _returnHomeAfterPayment() {
+    if (widget.onPaymentCompletedNavigateHome != null) {
+      widget.onPaymentCompletedNavigateHome!.call();
+      return;
+    }
+    _backToCatalog();
   }
 
   void _handleCheckoutBack() {
@@ -2175,8 +2199,8 @@ class _CheckoutBar extends StatelessWidget {
           final amountText = '总计：$amountLabel';
           final amountStyle =
               Theme.of(context).textTheme.displayMedium?.copyWith(
-                    fontSize: 24,
-                  ) ??
+                        fontSize: 24,
+                      ) ??
                   const TextStyle(fontSize: 24);
           final amountWidth =
               _measureTextWidth(context, amountText, amountStyle) + 4;
@@ -2316,17 +2340,15 @@ class _InlineButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 18,
-                color: enabled
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
+                color:
+                    enabled ? AppColors.textPrimary : AppColors.textSecondary,
               ),
             if (isLoading || icon != null) const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
-                color: enabled
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
+                color:
+                    enabled ? AppColors.textPrimary : AppColors.textSecondary,
                 fontWeight: FontWeight.w800,
               ),
             ),

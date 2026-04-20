@@ -8,7 +8,9 @@ import '../models/web_user_subpage.dart';
 import '../services/api_config.dart';
 import '../services/web_app_facade.dart';
 import '../theme/app_colors.dart';
+import '../widgets/animated_card.dart';
 import '../widgets/animated_background.dart';
+import '../widgets/gradient_card.dart';
 import '../widgets/web_crisp_widget.dart';
 import '../widgets/web_layout_metrics.dart';
 import 'web_account_page.dart';
@@ -55,6 +57,22 @@ class _WebShellState extends State<WebShell> {
       Localizations.localeOf(context).languageCode.toLowerCase().startsWith(
             'zh',
           );
+
+  Future<void> _confirmAndLogout() async {
+    final isChinese = _isChinese(context);
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => _ShellConfirmDialog(
+            title: isChinese ? '提示' : 'Notice',
+            message: isChinese ? '确认退出？' : 'Are you sure you want to log out?',
+            cancelLabel: isChinese ? '取消' : 'Cancel',
+            confirmLabel: isChinese ? '确定' : 'Confirm',
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    await _logout();
+  }
 
   Future<void> _logout() async {
     try {
@@ -200,9 +218,12 @@ class _WebShellState extends State<WebShell> {
                               compact: true,
                             );
                             const compactFitSafetyGap = 24.0;
-                            final singleRowFits =
-                                brandWidth + 16 + allNavWidth + 16 + logoutWidth <=
-                                    constraints.maxWidth;
+                            final singleRowFits = brandWidth +
+                                    16 +
+                                    allNavWidth +
+                                    16 +
+                                    logoutWidth <=
+                                constraints.maxWidth;
 
                             if (singleRowFits) {
                               return Row(
@@ -533,7 +554,7 @@ class _WebShellState extends State<WebShell> {
 
   Widget _buildLogoutButton(bool isChinese, {bool compact = false}) {
     return TextButton.icon(
-      onPressed: _logout,
+      onPressed: _confirmAndLogout,
       icon: const Icon(Icons.logout_rounded, size: 18),
       label: Text(isChinese ? '退出登录' : 'Logout'),
       style: TextButton.styleFrom(
@@ -568,6 +589,8 @@ class _WebShellState extends State<WebShell> {
           initialOrderRef: _purchaseInitialOrderRef,
           initialFallbackPlan: _purchaseInitialFallbackPlan,
           onOpenUserOrders: _openUserOrders,
+          onPaymentCompletedNavigateHome: () =>
+              _openSection(WebShellSection.home),
         );
       case WebShellSection.help:
         return WebHelpPage(onUnauthorized: widget.onLogout);
@@ -580,5 +603,126 @@ class _WebShellState extends State<WebShell> {
           onUnauthorized: widget.onLogout,
         );
     }
+  }
+}
+
+class _ShellConfirmDialog extends StatelessWidget {
+  const _ShellConfirmDialog({
+    required this.title,
+    required this.message,
+    required this.cancelLabel,
+    required this.confirmLabel,
+  });
+
+  final String title;
+  final String message;
+  final String cancelLabel;
+  final String confirmLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      key: const Key('web-shell-confirm-dialog'),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: GradientCard(
+          borderRadius: 34,
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                      fontSize: 32,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                message,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ShellDialogButton(
+                      label: cancelLabel,
+                      emphasized: false,
+                      onTap: () => Navigator.of(context).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _ShellDialogButton(
+                      label: confirmLabel,
+                      emphasized: true,
+                      onTap: () => Navigator.of(context).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShellDialogButton extends StatelessWidget {
+  const _ShellDialogButton({
+    required this.label,
+    required this.emphasized,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool emphasized;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: AnimatedCard(
+        onTap: onTap,
+        hoverScale: 1.015,
+        padding: EdgeInsets.zero,
+        borderRadius: 18,
+        enableBreathing: false,
+        gradientColors: [
+          emphasized
+              ? AppColors.accent.withValues(alpha: 0.18)
+              : AppColors.surfaceAlt.withValues(alpha: 0.78),
+          emphasized
+              ? AppColors.accent.withValues(alpha: 0.12)
+              : AppColors.surface.withValues(alpha: 0.9),
+        ],
+        baseBorderColor: emphasized
+            ? AppColors.accent.withValues(alpha: 0.46)
+            : AppColors.border,
+        hoverBorderColor: emphasized
+            ? AppColors.accent.withValues(alpha: 0.64)
+            : AppColors.textSecondary,
+        child: Center(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: emphasized
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
+                ),
+          ),
+        ),
+      ),
+    );
   }
 }

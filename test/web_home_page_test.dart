@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:capybara/widgets/animated_card.dart';
 import 'package:capybara/models/user_info.dart';
+import 'package:capybara/models/web_client_import_option.dart';
 import 'package:capybara/models/web_client_download.dart';
 import 'package:capybara/models/web_home_view_data.dart';
 import 'package:capybara/models/web_shell_section.dart';
@@ -219,7 +220,8 @@ void main() {
         WebHomePage(
           onNavigate: (section) => navigatedSection = section,
           onUnauthorized: () {},
-          dataLoader: (_) => SynchronousFuture(_homeData(hasSubscription: true)),
+          dataLoader: (_) =>
+              SynchronousFuture(_homeData(hasSubscription: true)),
           subscriptionLinkCreator: (flag) async {
             requestedFlag = flag;
             return link;
@@ -288,6 +290,66 @@ void main() {
 
     expect(creatorCalled, isFalse);
     expect(find.text('开通套餐后即可使用订阅链接。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web home keeps all import options visible when subscribed',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () {},
+          dataLoader: (_) =>
+              SynchronousFuture(_homeData(hasSubscription: true)),
+          importOptionsLoader: (_) async => const <WebClientImportOptionData>[
+            WebClientImportOptionData(
+              clientKey: 'shadowrocket',
+              displayName: 'Shadowrocket',
+              supported: true,
+              actionType: 'deep_link',
+              actionValue: 'shadowrocket://import',
+              protocolHint: 'shadowrocket',
+            ),
+            WebClientImportOptionData(
+              clientKey: 'quantumultx',
+              displayName: 'Quantumult X',
+              supported: true,
+              actionType: 'copy_link',
+              actionValue: 'quantumult-x://import',
+              protocolHint: 'quantumultx',
+            ),
+            WebClientImportOptionData(
+              clientKey: 'surge',
+              displayName: 'Surge',
+              supported: true,
+              actionType: 'copy_link',
+              actionValue: 'surge://import',
+              protocolHint: 'surge',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Shadowrocket'), findsOneWidget);
+    expect(find.text('Quantumult X'), findsOneWidget);
+    expect(find.text('Surge'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Surge'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Surge'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

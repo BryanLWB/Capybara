@@ -182,7 +182,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('web purchase order setup adapts coupon and checkout bar on narrow width',
+  testWidgets(
+      'web purchase order setup adapts coupon and checkout bar on narrow width',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(760, 1600);
@@ -944,7 +945,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('web account user center switches through orders nodes tickets and traffic',
+  testWidgets(
+      'web account user center switches through orders nodes tickets and traffic',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 2000);
@@ -1317,7 +1319,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('web shell keeps account navigation on second row when only nav fits',
+  testWidgets(
+      'web shell keeps account navigation on second row when only nav fits',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(650, 1400);
@@ -1434,6 +1437,11 @@ void main() {
     await tester.tap(find.text('退出登录'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byKey(const Key('web-shell-confirm-dialog')), findsOneWidget);
+
+    await tester.tap(find.text('确定'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     final prefs = await SharedPreferences.getInstance();
     expect(serverLogoutCalled, isTrue);
@@ -1442,6 +1450,84 @@ void main() {
     expect(prefs.containsKey('app_session_token'), isFalse);
     expect(prefs.containsKey('api_token'), isFalse);
     expect(prefs.containsKey('api_auth_data'), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web purchase payment confirmation can navigate home',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var navigatedHome = false;
+    var statusChecks = 0;
+    await tester.pumpWidget(
+      _desktopHost(
+        WebPurchasePage(
+          plansLoader: _loadTestPlans,
+          onPaymentCompletedNavigateHome: () => navigatedHome = true,
+          orderCreator: (_, __, ___) async => 'T20260414066',
+          orderDetailLoader: (orderRef, fallbackPlan) async =>
+              WebOrderDetailData(
+            orderRef: orderRef,
+            stateCode: 0,
+            periodKey: 'month_price',
+            amountTotal: 380,
+            amountPayable: 390,
+            amountDiscount: 0,
+            amountBalance: 0,
+            amountRefund: 0,
+            amountSurplus: 0,
+            amountHandling: 10,
+            createdAt: 1776150000,
+            plan: fallbackPlan,
+          ),
+          paymentMethodsLoader: () async => <WebPaymentMethodData>[
+            WebPaymentMethodData(
+              id: 1,
+              label: '支付宝',
+              provider: 'AlipayF2F',
+              feeFixedCents: 0,
+              feeRate: 0,
+            ),
+          ],
+          orderCheckout: (_, __) async => WebCheckoutActionData(
+            kind: WebCheckoutActionKind.redirect,
+            code: 1,
+            payload: 'https://example.com/pay',
+          ),
+          paymentLauncher: (_) async => true,
+          orderStatusLoader: (_) async {
+            statusChecks += 1;
+            return statusChecks >= 2 ? 1 : 0;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('立即购买').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.textContaining('前去支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('结算'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('我已完成支付'), findsOneWidget);
+    await tester.tap(find.text('我已完成支付'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(navigatedHome, isTrue);
     expect(tester.takeException(), isNull);
   });
 }
