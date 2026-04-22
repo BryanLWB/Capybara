@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'flux_loader.dart';
+import 'capybara_loader.dart';
 
 /// 状态消息卡片组件
 class StatusMessageCard extends StatelessWidget {
@@ -51,7 +51,7 @@ class StatusMessageCard extends StatelessWidget {
               const SizedBox(
                 width: 16,
                 height: 16,
-                child: FluxLoader(size: 24, color: Colors.white),
+                child: CapybaraLoader(size: 24, color: Colors.white),
               )
             else if (icon != null)
               Icon(

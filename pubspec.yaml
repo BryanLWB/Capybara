@@ -1,4 +1,4 @@
-name: flux
+name: capybara
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -33,6 +33,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: any
+  js: ^0.7.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -51,6 +52,9 @@ dependencies:
   share_plus: ^7.2.2
   crisp_chat: ^2.4.3          # Customer support chat (iOS/Android only)
   encrypt: ^5.0.3             # AES encryption for API requests
+  flutter_html: ^3.0.0
+  markdown: ^7.3.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:
@@ -114,10 +118,9 @@ flutter:
   # see https://flutter.dev/to/font-from-package
  
 msix_config:
- display_name: Flux VPN
- publisher_display_name: Flux
- identity_name: com.flux.app.flux
+ display_name: Capybara VPN
+ publisher_display_name: Capybara
+ identity_name: app.capybara.client
  msix_version: 1.0.0.0
  logo_path: assets/icons/app_icon.png
  capabilities: "internetClient,internetClientServer,privateNetworkClientServer"
-

@@ -42,7 +42,7 @@ class SingboxService {
       debugPrint('[SingboxService] Loaded ${customRules['dns']?.length ?? 0} DNS rules and ${customRules['route']?.length ?? 0} route rules (Global: $isGlobal)');
 
       // Generate random interface name
-      final tunName = "flux_tun_${Random().nextInt(9000) + 1000}";
+      final tunName = "app_tun_${Random().nextInt(9000) + 1000}";
       debugPrint('[SingboxService] Using interface name: $tunName');
 
       // Prepare log path for Windows to fix file locking by PowerShell redirection
@@ -357,7 +357,7 @@ while (\$true) {
     List<Map<String, dynamic>>? customDnsRules,
     List<Map<String, dynamic>>? customRouteRules,
     bool isGlobal = false,
-    String tunInterfaceName = "flux_tun",
+    String tunInterfaceName = "app_tun",
     String? logOutput,
   }) {
     // Build outbound based on node protocol

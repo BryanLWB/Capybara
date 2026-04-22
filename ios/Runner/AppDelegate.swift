@@ -11,7 +11,7 @@ import UIKit
     let controller : FlutterViewController = window?.rootViewController as! FlutterViewController
     
     // Method Channel
-    let vpnChannel = FlutterMethodChannel(name: "com.example.flux/v2ray", binaryMessenger: controller.binaryMessenger)
+    let vpnChannel = FlutterMethodChannel(name: "app.capybara.client/v2ray", binaryMessenger: controller.binaryMessenger)
     vpnChannel.setMethodCallHandler({
       (call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
         switch call.method {
@@ -32,7 +32,7 @@ import UIKit
     })
       
     // Event Channel
-    let statusChannel = FlutterEventChannel(name: "com.example.flux/v2ray_status", binaryMessenger: controller.binaryMessenger)
+    let statusChannel = FlutterEventChannel(name: "app.capybara.client/v2ray_status", binaryMessenger: controller.binaryMessenger)
     statusChannel.setStreamHandler(VPNStatusStreamHandler())
 
     GeneratedPluginRegistrant.register(with: self)

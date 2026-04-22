@@ -1,9 +1,8 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// Conditionally import crisp_chat only on mobile platforms
-import 'package:crisp_chat/crisp_chat.dart' if (dart.library.html) 'dart:io';
+import 'crisp_bridge.dart';
+import 'platform_service.dart';
 import 'remote_config_service.dart';
 
 /// Crisp Chat Service for customer support
@@ -30,7 +29,7 @@ class CrispService {
 
   /// Check if native Crisp SDK is supported on current platform
   static bool get isNativeSupported {
-    return !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+    return !kIsWeb && PlatformService.instance.isMobile;
   }
 
   /// Open Crisp chat with full user profile
@@ -82,29 +81,14 @@ class CrispService {
   }) async {
     // 1. Try to set session data (might fail if session not loaded yet)
     try {
-      if (userEmail != null && userEmail.isNotEmpty) {
-        FlutterCrispChat.setSessionString(key: 'email', value: userEmail);
-      }
-      if (userName != null && userName.isNotEmpty) {
-        FlutterCrispChat.setSessionString(key: 'nickname', value: userName);
-      }
-      
-      // Set additional user profile data
-      if (plan != null && plan.isNotEmpty) {
-        FlutterCrispChat.setSessionString(key: 'plan', value: plan);
-      }
-      if (expires != null && expires.isNotEmpty) {
-        FlutterCrispChat.setSessionString(key: 'expires', value: expires);
-      }
-      if (traffic != null && traffic.isNotEmpty) {
-        FlutterCrispChat.setSessionString(key: 'traffic', value: traffic);
-      }
-      if (balance != null && balance.isNotEmpty) {
-        FlutterCrispChat.setSessionString(key: 'balance', value: balance);
-      }
-      
-      // Set session segment to identify app users
-      FlutterCrispChat.setSessionSegments(segments: ['flux_app_user'], overwrite: false);
+      await CrispBridge.setSessionData(
+        userEmail: userEmail,
+        userName: userName,
+        plan: plan,
+        expires: expires,
+        traffic: traffic,
+        balance: balance,
+      );
     } catch (e) {
       // Ignore session errors - session might not be loaded yet on first run
       debugPrint('Crisp session data setting skipped (not critical): $e');
@@ -112,24 +96,11 @@ class CrispService {
 
     // 2. Open Chat (Crucial step)
     try {
-      // Configure user object with basic info
-      User? crispUser;
-      if (userEmail != null || userName != null) {
-        crispUser = User(
-          email: userEmail,
-          nickName: userName,
-        );
-      }
-
-      // Create Crisp config with user info
-      final config = CrispConfig(
-        websiteID: websiteId,
-        user: crispUser,
-        enableNotifications: true,
+      await CrispBridge.openChat(
+        websiteId: websiteId,
+        userEmail: userEmail,
+        userName: userName,
       );
-
-      // Open the chat
-      await FlutterCrispChat.openCrispChat(config: config);
     } catch (e) {
       debugPrint('Error opening native Crisp chat: $e');
       // Fallback to web chat if native fails entirely
@@ -186,7 +157,7 @@ class CrispService {
     }
     
     // Add segment
-    queryParams['data[segment]'] = 'flux_app_user';
+    queryParams['data[segment]'] = 'app_user';
     
     // Build the URL with parameters
     final uri = Uri.parse(webChatBaseUrl).replace(queryParameters: queryParams);
@@ -200,7 +171,7 @@ class CrispService {
   static Future<void> resetSession() async {
     if (isNativeSupported) {
       try {
-        await FlutterCrispChat.resetCrispChatSession();
+        await CrispBridge.resetSession();
       } catch (e) {
         debugPrint('Error resetting Crisp session: $e');
       }

@@ -14,16 +14,24 @@ class RemoteConfigService {
   // 🔧 配置项 - 请根据实际情况修改
   // ============================================
 
+  static const String _configUrlsDefine = String.fromEnvironment(
+    'APP_CONFIG_URLS',
+    defaultValue: 'https://your-oss-endpoint.com/release_config.json',
+  );
+
   /// OSS 配置文件地址列表（按优先级排序）
   /// 建议使用多个 CDN 地址作为备份
-  /// TODO: Replace with your own OSS/CDN URLs
-  static const List<String> _ossUrls = [
-    'https://your-oss-endpoint.com/release_config.json',
-  ];
+  static final List<String> _ossUrls = _configUrlsDefine
+      .split(',')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
 
   /// 默认 API 域名（当 OSS 配置获取失败时使用）
-  /// TODO: Replace with your V2Board API domain
-  static const String _defaultDomain = 'https://your-api-domain.com';
+  static const String _defaultDomain = String.fromEnvironment(
+    'APP_API_DEFAULT_DOMAIN',
+    defaultValue: 'https://your-api-domain.com',
+  );
 
   /// 配置缓存有效期（小时）
   static const int _cacheValidHours = 6;
@@ -35,7 +43,8 @@ class RemoteConfigService {
   static const String _configCacheKey = 'remote_config_cache';
   static const String _configVersionKey = 'remote_config_version';
   static const String _lastFetchTimeKey = 'remote_config_last_fetch';
-  static const String _activeDomainKey = 'remote_config_active_domain_v2';
+  static const String _activeDomainKey =
+      'remote_config_active_domain_app_api_v1';
 
   static RemoteConfig? _cachedConfig;
   static String? _activeDomain;
@@ -132,8 +141,7 @@ class RemoteConfigService {
 
     final hasUpdate =
         _compareVersions(currentVersion, platformUpdate.version) < 0;
-    final isForced =
-        platformUpdate.force ||
+    final isForced = platformUpdate.force ||
         (config.update!.minVersion != null &&
             _compareVersions(currentVersion, config.update!.minVersion!) < 0);
 
@@ -217,12 +225,10 @@ class RemoteConfigService {
 
     try {
       _log('Fetching routing rules from: ${rulesConfig.url}');
-      final response = await http
-          .get(
-            Uri.parse(rulesConfig.url),
-            headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await http.get(
+        Uri.parse(rulesConfig.url),
+        headers: _requestHeaders(),
+      ).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         String content = response.body;
         // 尝试解密 (如果OSS上的文件是加密的)
@@ -262,12 +268,10 @@ class RemoteConfigService {
 
   Future<RemoteConfig?> _fetchFromUrl(String url) async {
     try {
-      final response = await http
-          .get(
-            Uri.parse(url),
-            headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        Uri.parse(url),
+        headers: _requestHeaders(),
+      ).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         // 智能解密：支持加密和明文两种格式
         final decryptedBody = ConfigEncryption.smartDecrypt(response.body);
@@ -285,12 +289,10 @@ class RemoteConfigService {
       // 简单的健康检查，尝试访问根路径或 /ping
       final uri = Uri.parse(domain);
       final testUrl = uri.replace(path: '/');
-      final response = await http
-          .get(
-            testUrl,
-            headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
-          )
-          .timeout(const Duration(seconds: 5));
+      final response = await http.get(
+        testUrl,
+        headers: _requestHeaders(),
+      ).timeout(const Duration(seconds: 5));
       return response.statusCode < 500;
     } catch (e) {
       _log('Domain test failed for $domain: $e');
@@ -356,6 +358,15 @@ class RemoteConfigService {
     if (kDebugMode) {
       print('[RemoteConfigService] $message');
     }
+  }
+
+  Map<String, String> _requestHeaders() {
+    final headers = <String, String>{'Accept': '*/*'};
+    final userAgent = UserAgentUtils.userAgent;
+    if (userAgent.isNotEmpty) {
+      headers['User-Agent'] = userAgent;
+    }
+    return headers;
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "Flux",
+  "appTitle": "Capybara",
   "home": "Home",
   "servers": "Servers",
   "subscription": "Subscription",
@@ -185,7 +185,7 @@
   "month": "month",
   "year": "year",
   "createdAt": "Created at",
-  "appDescription": "Flux is a secure and fast network acceleration service.",
+  "appDescription": "Capybara is a secure and fast network acceleration service.",
   "fastRoutingDesc": "Fast Routing Optimization",
   "highSpeedDesc": "Global Fast Lines",
   "privacyProtectionDesc": "Privacy Protection",

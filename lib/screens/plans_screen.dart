@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/plan.dart';
-import '../services/v2board_api.dart';
+import '../services/panel_api.dart';
 import '../services/user_data_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
@@ -9,7 +9,7 @@ import '../widgets/animated_card.dart';
 import '../widgets/fade_in_widget.dart';
 import '../widgets/staggered_list.dart';
 import '../widgets/section_header.dart';
-import '../widgets/flux_loader.dart';
+import '../widgets/capybara_loader.dart';
 import '../widgets/redeem_gift_dialog.dart';
 import 'orders_screen.dart';
 
@@ -44,7 +44,7 @@ class _PlansScreenState extends State<PlansScreen> {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           final err = snapshot.error;
-          final message = err is V2BoardApiException
+          final message = err is PanelApiException
               ? err.message
               : (AppLocalizations.of(context)?.networkError ?? 'Network error');
           return Center(
@@ -68,7 +68,7 @@ class _PlansScreenState extends State<PlansScreen> {
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: FluxLoader(showTips: true));
+          return const Center(child: CapybaraLoader(showTips: true));
         }
         final plans = snapshot.data!;
         return StaggeredList(

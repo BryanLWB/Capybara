@@ -1,12 +1,2 @@
-import 'dart:io';
-
-class UserAgentUtils {
-  static String get userAgent {
-    String os = Platform.operatingSystem;
-    // Capitalize first letter
-    if (os.isNotEmpty) {
-      os = os[0].toUpperCase() + os.substring(1);
-    }
-    return 'Flux/1.0 ($os)';
-  }
-}
+export 'user_agent_utils_io.dart'
+    if (dart.library.html) 'user_agent_utils_web.dart';

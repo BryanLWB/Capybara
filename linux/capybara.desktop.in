@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Capybara VPN
+Comment=Capybara VPN client
+Exec=@BINARY_NAME@
+TryExec=@BINARY_NAME@
+Icon=@APPLICATION_ID@
+Terminal=false
+Type=Application
+StartupWMClass=@BINARY_NAME@
+Categories=Network;Utility;

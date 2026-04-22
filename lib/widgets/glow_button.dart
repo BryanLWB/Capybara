@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
-import 'flux_loader.dart';
+import 'capybara_loader.dart';
 
 class GlowButton extends StatelessWidget {
   final String label;
@@ -49,7 +49,7 @@ class GlowButton extends StatelessWidget {
               ? SizedBox(
                   height: 24,
                   width: 24,
-                  child: FluxLoader(
+                  child: CapybaraLoader(
                     size: 24, 
                     color: AppColors.surface,
                   ),

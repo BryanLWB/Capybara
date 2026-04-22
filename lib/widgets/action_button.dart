@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'flux_loader.dart';
+import 'capybara_loader.dart';
 
 /// 操作按钮组件
 class ActionButton extends StatelessWidget {
@@ -62,7 +62,7 @@ class ActionButton extends StatelessWidget {
                 const SizedBox(
                   width: 16,
                   height: 16,
-                  child: FluxLoader(size: 20, color: Colors.white),
+                  child: CapybaraLoader(size: 16, color: Colors.white),
                 )
               else
                 Icon(
@@ -90,4 +90,3 @@ class ActionButton extends StatelessWidget {
     );
   }
 }
-

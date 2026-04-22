@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../services/api_config.dart';
-import '../services/v2board_api.dart';
+import '../services/panel_api.dart';
 import '../theme/app_colors.dart';
 
 import '../widgets/gradient_card.dart';
 import '../widgets/animated_background.dart';
-import '../widgets/flux_loader.dart';
+import '../widgets/capybara_loader.dart';
 
 enum AuthMode { login, register, reset }
 
@@ -95,7 +95,7 @@ class _ButtonLoaderState extends State<_ButtonLoader>
 
 class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
-  final _api = V2BoardApi();
+  final _api = PanelApi();
   final _config = ApiConfig();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -163,23 +163,17 @@ class _AuthScreenState extends State<AuthScreen>
         );
       }
 
-      final token = (response['data'] ?? {})['token'];
-      if (token is String && token.isNotEmpty) {
-        await _config.setToken(token);
-        // 确保 token 保存后立即刷新缓存
-        await _config.refreshAuthCache();
-      }
-      final authData = (response['data'] ?? {})['auth_data'];
-      if (authData is String && authData.isNotEmpty) {
-        await _config.setAuthData(authData);
-        // 确保 authData 保存后立即刷新缓存
-        await _config.refreshAuthCache();
+      final sessionToken = (response['data'] ?? {})['session_token'];
+      if (sessionToken is String && sessionToken.isNotEmpty) {
+        await _config.setSessionToken(sessionToken);
+        await _config.dropLegacyAuth();
+        await _config.refreshSessionCache();
       }
       // 添加短暂延迟，确保数据已完全保存
       await Future.delayed(const Duration(milliseconds: 100));
       widget.onAuthed();
     } catch (e) {
-      final msg = e is V2BoardApiException ? e.message : e.toString();
+      final msg = e is PanelApiException ? e.message : e.toString();
       setState(() {
         _message = msg;
       });
@@ -217,7 +211,7 @@ class _AuthScreenState extends State<AuthScreen>
     } catch (e) {
       // 4. 请求失败，恢复状态
       if (mounted) {
-        final msg = e is V2BoardApiException ? e.message : e.toString();
+        final msg = e is PanelApiException ? e.message : e.toString();
         setState(() {
           _message = '$msg';
           _isSendingVerify = false;
@@ -316,7 +310,7 @@ class _AuthScreenState extends State<AuthScreen>
                               color: AppColors.textPrimary,
                               letterSpacing: 2,
                             ),
-                            child: const Text('Flux'),
+                            child: const Text('Capybara'),
                           ),
                           AnimatedSize(
                             duration: const Duration(milliseconds: 200),
@@ -450,7 +444,7 @@ class _AuthScreenState extends State<AuthScreen>
                                           ? const SizedBox(
                                               width: 24,
                                               height: 24,
-                                              child: FluxLoader(
+                                              child: CapybaraLoader(
                                                 size: 24,
                                                 color: Colors.black,
                                               ),
@@ -601,7 +595,7 @@ class _AuthScreenState extends State<AuthScreen>
         key: ValueKey('loading'),
         width: 18,
         height: 18,
-        child: FluxLoader(size: 18, color: AppColors.textSecondary),
+        child: CapybaraLoader(size: 18, color: AppColors.textSecondary),
       );
     }
 

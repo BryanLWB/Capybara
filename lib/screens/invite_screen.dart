@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter/services.dart';
 import '../l10n/generated/app_localizations.dart';
-import '../services/v2board_api.dart';
+import '../services/panel_api.dart';
 import '../models/invite_data.dart';
 import '../theme/app_colors.dart';
-import '../widgets/flux_loader.dart';
+import '../widgets/capybara_loader.dart';
 import 'package:share_plus/share_plus.dart';
 
 class InviteScreen extends StatefulWidget {
@@ -45,7 +45,7 @@ class _InviteScreenState extends State<InviteScreen>
   }
 
   Future<Map<String, dynamic>> _loadData() async {
-    final api = V2BoardApi();
+    final api = PanelApi();
     final data = await api.fetchInviteData();
     final details = await api.fetchInviteDetails();
     return {'data': data, 'details': details};
@@ -54,7 +54,7 @@ class _InviteScreenState extends State<InviteScreen>
   Future<void> _generateCode() async {
     setState(() => _isGenerating = true);
     try {
-      final api = V2BoardApi();
+      final api = PanelApi();
       await api.generateInviteCode();
       // Reload data
       setState(() {
@@ -111,7 +111,7 @@ class _InviteScreenState extends State<InviteScreen>
             );
           }
           if (!snapshot.hasData) {
-            return const Center(child: FluxLoader(showTips: true));
+            return const Center(child: CapybaraLoader(showTips: true));
           }
 
           final inviteData = snapshot.data!['data'] as InviteFetchData;
@@ -446,10 +446,9 @@ class _InviteScreenState extends State<InviteScreen>
                 children: [
                   IconButton(
                     onPressed: () async {
-                      // Hardcoded domain as per feedback
-                      const domain = 'https://www.fluxhub.cc';
+                      const domain = 'https://www.example.com';
                       final url = '$domain/#/register?code=${code.code}';
-                      Share.share('Check out Flux VPN! $url');
+                      Share.share('Check this out: $url');
                     },
                     icon: const Icon(Icons.share, color: Colors.white70),
                   ),
@@ -560,29 +559,56 @@ class _InviteScreenState extends State<InviteScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _getCommissionStatusText(item.commissionStatus),
+                    item.statusText ?? '已记录',
                     style: TextStyle(
-                      color: _getCommissionStatusColor(item.commissionStatus),
+                      color: _getRecordStatusColor(item.statusText),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    _formatDate(item.createdAt),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.white.withOpacity(0.4),
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        _formatDate(item.createdAt),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withOpacity(0.4),
+                        ),
+                      ),
+                      if (item.tradeNo?.isNotEmpty == true) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '#${item.tradeNo}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white.withOpacity(0.35),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
-              Text(
-                '+${item.commissionBalance}元',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.accent,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '+${item.amount}元',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                  if (item.orderAmount != null)
+                    Text(
+                      '订单 ${item.orderAmount}元',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withOpacity(0.4),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -596,33 +622,17 @@ class _InviteScreenState extends State<InviteScreen>
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
-  String _getCommissionStatusText(int status) {
-    switch (status) {
-      case 0:
-        return '待确认';
-      case 1:
-        return '发放中';
-      case 2:
-        return '有效';
-      case 3:
-        return '无效';
-      default:
-        return '未知';
+  Color _getRecordStatusColor(String? statusText) {
+    final lower = statusText?.toLowerCase() ?? '';
+    if (lower.contains('pending') || statusText == '待确认') {
+      return Colors.orange;
     }
-  }
-
-  Color _getCommissionStatusColor(int status) {
-    switch (status) {
-      case 0:
-        return Colors.orange;
-      case 1:
-        return Colors.blue;
-      case 2:
-        return Colors.green;
-      case 3:
-        return Colors.red;
-      default:
-        return Colors.grey;
+    if (lower.contains('invalid') || statusText == '无效') {
+      return Colors.red;
     }
+    if (lower.contains('processing') || statusText == '发放中') {
+      return Colors.blue;
+    }
+    return Colors.green;
   }
 }

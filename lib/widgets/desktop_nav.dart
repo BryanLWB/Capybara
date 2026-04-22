@@ -48,7 +48,7 @@ class DesktopNav extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 const Text(
-                  'Flux',
+                  'Capybara',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 22,
@@ -87,7 +87,7 @@ class DesktopNav extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'FLUX v1.0.0',
+              'CAPYBARA v1.0.0',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 10,

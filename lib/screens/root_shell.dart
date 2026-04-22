@@ -18,7 +18,7 @@ import 'home_dashboard.dart';
 import 'plans_screen.dart';
 import 'orders_screen.dart';
 import '../widgets/animated_background.dart';
-import '../widgets/flux_loader.dart';
+import '../widgets/capybara_loader.dart';
 import '../widgets/glass_nav_bar.dart';
 import '../widgets/desktop_nav.dart';
 import '../widgets/node_picker_sheet.dart';
@@ -431,7 +431,7 @@ class _RootShellState extends State<RootShell> with WindowListener {
   @override
   Widget build(BuildContext context) {
     if (_isInitializing) {
-      return const Scaffold(body: Center(child: FluxLoader()));
+      return const Scaffold(body: Center(child: CapybaraLoader()));
     }
 
     return _buildMainScaffold();
@@ -511,7 +511,7 @@ class _RootShellState extends State<RootShell> with WindowListener {
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
-                                    child: FluxLoader(
+                                    child: CapybaraLoader(
                                       size: 20,
                                       color: AppColors.textPrimary,
                                     ),
@@ -563,14 +563,14 @@ class _RootShellState extends State<RootShell> with WindowListener {
           children: [
             const Icon(Icons.blur_on, color: AppColors.accent),
             const SizedBox(width: 8),
-            const Text('Flux'),
+            const Text('Capybara'),
             const Spacer(),
             IconButton(
               icon: _isLoadingNodes
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: FluxLoader(size: 20, color: AppColors.textPrimary),
+                      child: CapybaraLoader(size: 20, color: AppColors.textPrimary),
                     )
                   : const Icon(
                       Icons.storage_rounded,

@@ -16,9 +16,14 @@ enum ProxyRoutingMode { global, rule }
 
 /// V2ray服务 - 全平台统一入口
 class V2rayService {
-  static const MethodChannel _channel = MethodChannel('com.example.flux/v2ray');
+  static const String _apiDirectHostsDefine = String.fromEnvironment(
+    'APP_API_DIRECT_HOSTS',
+    defaultValue: '',
+  );
+  static const MethodChannel _channel =
+      MethodChannel('app.capybara.client/v2ray');
   static const EventChannel _statusChannel = EventChannel(
-    'com.example.flux/v2ray_status',
+    'app.capybara.client/v2ray_status',
   );
   static Stream<bool>? _statusStream;
 
@@ -107,7 +112,6 @@ class V2rayService {
           success = await _startDesktopXray(node);
         }
 
-
         if (success) {
           _updateDesktopStatus(true);
         }
@@ -134,26 +138,27 @@ class V2rayService {
       };
 
       if (_routingMode == ProxyRoutingMode.rule) {
-        // ALWAYS add critical API domains to direct rules to prevent proxy loops/timeouts
-        final apiDirectRule = {
-          "type": "field",
-          "domain": ["domain:your-api-domain.com"], // TODO: Replace with your API domain
-          "outboundTag": "direct",
-        };
+        final apiDirectRule = await _buildApiDirectRule();
 
         try {
           final remoteRules = await RemoteConfigService().fetchRoutingRules();
           if (remoteRules != null && remoteRules['rules'] is List) {
             final rules = (remoteRules['rules'] as List);
-            rules.insert(0, apiDirectRule); // Priority 1
+            if (apiDirectRule.isNotEmpty) {
+              rules.insert(0, apiDirectRule); // Priority 1
+            }
             fullConfig['routingRules'] = rules;
             _log('Mobile: Attached ${rules.length} remote rules');
           } else {
-            fullConfig['routingRules'] = [apiDirectRule];
+            fullConfig['routingRules'] = apiDirectRule.isEmpty
+                ? <Map<String, dynamic>>[]
+                : [apiDirectRule];
           }
         } catch (e) {
           _log('Mobile: Failed to fetch remote rules: $e');
-          fullConfig['routingRules'] = [apiDirectRule];
+          fullConfig['routingRules'] = apiDirectRule.isEmpty
+              ? <Map<String, dynamic>>[]
+              : [apiDirectRule];
         }
       }
 
@@ -172,6 +177,54 @@ class V2rayService {
     _desktopStatusController.add(isConnected);
   }
 
+  Future<Map<String, dynamic>> _buildApiDirectRule() async {
+    final directDomains = <String>{};
+    final directIps = <String>{};
+
+    for (final value in _apiDirectHostsDefine.split(',')) {
+      final trimmed = value.trim();
+      if (trimmed.isNotEmpty) {
+        _addDirectHost(trimmed, directDomains, directIps);
+      }
+    }
+
+    try {
+      final activeDomain = await RemoteConfigService().getActiveDomain();
+      final host = Uri.tryParse(activeDomain)?.host ?? '';
+      if (host.isNotEmpty) {
+        _addDirectHost(host, directDomains, directIps);
+      }
+    } catch (_) {}
+
+    if (directDomains.isEmpty && directIps.isEmpty) {
+      return <String, dynamic>{};
+    }
+
+    final rule = <String, dynamic>{
+      'type': 'field',
+      'outboundTag': 'direct',
+    };
+    if (directDomains.isNotEmpty) {
+      rule['domain'] = directDomains.map((host) => 'domain:$host').toList();
+    }
+    if (directIps.isNotEmpty) {
+      rule['ip'] = directIps.toList();
+    }
+    return rule;
+  }
+
+  void _addDirectHost(
+    String host,
+    Set<String> directDomains,
+    Set<String> directIps,
+  ) {
+    if (InternetAddress.tryParse(host) != null) {
+      directIps.add(host);
+      return;
+    }
+    directDomains.add(host);
+  }
+
   // 代理模式状态
   ProxyRoutingMode _routingMode = ProxyRoutingMode.rule;
   bool _enableTun = false;
@@ -188,7 +241,7 @@ class V2rayService {
     if (_routingMode == mode) return;
     _routingMode = mode;
     _log('Routing mode set to: $mode');
-    
+
     // 如果已连接，触发重连以应用新模式
     if (_isDesktopActive() && _currentNode != null) {
       _log('Auto-reconnecting to apply routing mode change...');
@@ -201,11 +254,11 @@ class V2rayService {
     if (_enableTun == enable) return;
     _enableTun = enable;
     _log('Tun mode set to: $enable');
-    
+
     // 持久化保存
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('tun_mode_enabled', enable);
-    
+
     // 如果已连接，触发重连以切换模式
     if (_isDesktopActive() && _currentNode != null) {
       _log('Auto-reconnecting to apply Tun mode change...');
@@ -230,15 +283,14 @@ class V2rayService {
     return false;
   }
 
-
-
   /// 桌面端 Xray 启动逻辑 (Win / Mac / Linux)
   Future<bool> _startDesktopXray(ServerNode node) async {
     // Ensure any previous instances are killed to release file locks
     if (Platform.isWindows) {
       try {
         // Force kill any existing xray.exe
-        await Process.run('taskkill', ['/F', '/IM', 'xray.exe'], runInShell: true);
+        await Process.run('taskkill', ['/F', '/IM', 'xray.exe'],
+            runInShell: true);
         // Wait for file handle release
         await Future.delayed(const Duration(milliseconds: 500));
       } catch (e) {
@@ -265,9 +317,8 @@ class V2rayService {
     }
 
     final dir = await getApplicationSupportDirectory();
-    final binDir = Platform.isWindows
-        ? Directory(path.join(dir.path, 'bin'))
-        : dir;
+    final binDir =
+        Platform.isWindows ? Directory(path.join(dir.path, 'bin')) : dir;
     if (!await binDir.exists()) await binDir.create(recursive: true);
 
     final configPath = path.join(binDir.path, 'config.json');

@@ -2,28 +2,28 @@
 
 <div align="center">
 
-# ⚡ Flux
+# ⚡ Capybara
 
-### White-Label Client Solution for V2Board Operators (Android / iOS / Windows / macOS)
+### White-Label Proxy Client Solution (Android / iOS / Windows / macOS)
 
 **Dual Core | Process Daemon | Payment Integration | Business Ready**
 
 Change one API URL → Build → Get Your Branded App
 
-[![Stars](https://img.shields.io/github/stars/flux-apphub/flux?style=flat-square&logo=github)](https://github.com/flux-apphub/flux/stargazers)
-[![Forks](https://img.shields.io/github/forks/flux-apphub/flux?style=flat-square&logo=github)](https://github.com/flux-apphub/flux/network/members)
-[![License](https://img.shields.io/github/license/flux-apphub/flux?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/BryanLWB/Capybara?style=flat-square&logo=github)](https://github.com/BryanLWB/Capybara/stargazers)
+[![Forks](https://img.shields.io/github/forks/BryanLWB/Capybara?style=flat-square&logo=github)](https://github.com/BryanLWB/Capybara/network/members)
+[![License](https://img.shields.io/github/license/BryanLWB/Capybara?style=flat-square)](LICENSE)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter)](https://flutter.dev)
 
-💬 [Join Telegram Group](https://t.me/+62Otr015kSs1YmNk) · 📞 [Business @fluxdeveloper](https://t.me/fluxdeveloper)
+💬 Replace with your community link · 📞 Replace with your business contact
 
 </div>
 
 ---
 
-## 🚀 Why Flux?
+## 🚀 Why Capybara?
 
-More than just a proxy client, Flux is a revenue-generating tool for service providers.
+More than just a proxy client, Capybara is a revenue-generating tool for service providers.
 
 ### 💎 Commerce Features (Grow Revenue)
 - **Full Payment Suite**: Integrated Alipay, WeChat, Stripe, and USDT via Web Payment Jump.
@@ -42,22 +42,22 @@ More than just a proxy client, Flux is a revenue-generating tool for service pro
 - **Encryption**: AES-128 encryption for sensitive config and API parameters.
 - **Sanitized**: Zero hardcoded secrets or domains. Ready for public repo.
 
-### 🆚 Why Flux? (Comparison)
+### 🆚 Why Capybara? (Comparison)
 
-| Feature | ⚡ Flux | 🔴 v2rayNG | 🟡 Clash | 🔵 Shadowrocket |
+| Feature | ⚡ Capybara | 🔴 v2rayNG | 🟡 Clash | 🔵 Shadowrocket |
 | :--- | :---: | :---: | :---: | :---: |
 | **Cross-Platform** | **✅ 5 OS** | ❌ Android Only | ⚠️ Fragmented | ❌ iOS Only |
-| **V2Board API** | **✅ Native** | ❌ Manual Import | ❌ Manual Import | ❌ Manual Import |
+| **Panel Backend** | **✅ Integrated** | ❌ Manual Import | ❌ Manual Import | ❌ Manual Import |
 | **Flutter UI** | **✅ Material 3** | ❌ Native Android | ❌ Web Style | ❌ Native iOS |
 | **White-Label** | **✅ Ready-to-go** | ❌ Source Change | ❌ Hard | ❌ Impossible |
 | **Commercial** | **✅ MIT License** | ✅ | ⚠️ | ❌ |
 | **Open Source** | **✅ 100%** | ✅ | ⚠️ Partial | ❌ |
 
-👉 **Simply put: Flux is the only "Ready-to-use, White-label, Commercial" V2Board client solution.**
+👉 **Simply put: Capybara is a ready-to-use, white-label, commercial proxy client solution.**
 
-### 👥 Who is Flux For?
+### 👥 Who is Capybara For?
 
-| User Type | Your Need | How Flux Helps |
+| User Type | Your Need | How Capybara Helps |
 | :--- | :--- | :--- |
 | 🛫 **Airport Owner** | Want a branded client fast | ✅ Change 1 line, build in 5 mins |
 | 🧑💻 **Developer** | Want a clean Flutter proxy project | ✅ MIT License, commercial ready |
@@ -74,11 +74,11 @@ More than just a proxy client, Flux is a revenue-generating tool for service pro
 
 | Dashboard | Node List | Profile |
 | :---: | :---: | :---: |
-| <img src="assets/images/screenshots/1.png" alt="Flux VPN Dashboard" width="200"> | <img src="assets/images/screenshots/2.png" alt="Flux Server List" width="200"> | <img src="assets/images/screenshots/3.png" alt="Flux User Profile" width="200"> |
+| <img src="assets/images/screenshots/1.png" alt="Capybara Dashboard" width="200"> | <img src="assets/images/screenshots/2.png" alt="Capybara Server List" width="200"> | <img src="assets/images/screenshots/3.png" alt="Capybara User Profile" width="200"> |
 
 | Windows / MacOS Desktop |
 | :---: |
-| <img src="assets/images/screenshots/6.png" alt="Flux Desktop Client Windows" width="600"> |
+| <img src="assets/images/screenshots/6.png" alt="Capybara Desktop Client Windows" width="600"> |
 
 </details>
 
@@ -101,8 +101,8 @@ Powered by **SingBox + V2Ray** Dual Core.
 
 ```bash
 # 1. Clone
-git clone https://github.com/flux-apphub/flux.git
-cd flux
+git clone https://github.com/BryanLWB/Capybara.git
+cd Capybara
 
 # 2. Install dependencies
 flutter pub get
@@ -124,7 +124,7 @@ flutter run
 
 ## 📖 Admin Integration Guide
 
-Follow these steps to customize Flux for your service.
+Follow these steps to customize Capybara for your service.
 
 ### Step 1: Basic Config (Required)
 
@@ -138,13 +138,85 @@ Follow these steps to customize Flux for your service.
     *   *Name*: Edit `pubspec.yaml` `name` and platform specific files.
     *   *Icon*: Replace `assets/images/app_icon.png` (1024px), run `flutter pub run flutter_launcher_icons`.
 
-### Step 2: Backend Encryption (Anti-Abuse)
+### Step 2: App API And Session Layer (Required)
 
-Flux encrypts sensitive params (e.g., email verify) using AES-128.
+The current version uses the in-repo app API layer to hide upstream panel details and keep sessions opaque on the client.
 
-1.  Open `lib/services/v2board_api.dart`.
-2.  Find `_emailVerifyKey`, set a **16-char** random string.
-3.  Ensure backend supports decryption, or set `useEncryption = false`.
+1.  Configure the upstream endpoint and session settings used by `backend/app_api/lib/src/config/service_config.dart`.
+2.  Provide runtime values such as `UPSTREAM_BASE_URL`, `APP_SESSION_TTL_SECONDS`, and `REDIS_URL`.
+3.  Point the frontend domain entry to your app API instead of exposing the upstream panel directly.
+
+### Local Split-Dev Notes
+
+If you use the in-repo local Xboard Docker stack with `upstreams/xboard` bind-mounted into the container, prefer the one-shot preparation script first:
+
+```bash
+bash scripts/prepare_local_xboard.sh
+```
+
+It will:
+- check whether `upstreams/xboard` is behind upstream `master`
+- repair the nested `public/assets/admin` submodule if an old sync damaged it
+- run `composer install --no-dev`
+- sync the compiled admin assets from the official image into the local overlay directory
+
+If upstream has new commits, the script only prints how many commits your local mirror is behind and points you to:
+
+```bash
+bash scripts/update_local_xboard_upstream.sh
+```
+
+It does not silently auto-upgrade before startup, and it does not auto-apply migrations.
+
+If you prefer the raw commands, run them in this order:
+
+```bash
+git -C upstreams/xboard submodule update --init --force --checkout public/assets/admin
+docker compose -f docker/xboard-local.compose.yaml run --rm web composer install --no-dev
+bash scripts/sync_xboard_admin_assets.sh
+```
+
+If you want to safely update local `upstreams/xboard` to the latest upstream `master` while backing up your local data first, run:
+
+```bash
+bash scripts/update_local_xboard_upstream.sh
+```
+
+The script backs up:
+- `upstreams/xboard/.env`
+- `upstreams/xboard/.docker/.data`
+- `upstreams/xboard/storage/app`
+- the local Redis volume
+
+It then stops the stack, fast-forwards Xboard, refreshes dependencies and admin assets, and starts the services again. By default it does not automatically apply schema changes. If pending migrations exist, it will automatically print:
+- the migration file path
+- which tables are created or altered
+- whether the related tables already contain data
+- the SQL shown by `--pretend`
+
+You can also review pending migrations separately with:
+
+```bash
+bash scripts/review_xboard_pending_migrations.sh
+```
+
+If you intentionally want to apply migrations as part of the update, use:
+
+```bash
+bash scripts/update_local_xboard_upstream.sh --apply-migrations
+```
+
+Admin assets are now injected through a local overlay mount. Do not copy them directly into `upstreams/xboard/public/assets/admin`, or you may break the nested submodule and later Git operations.
+
+Without this preparation, the Xboard admin page will render as a blank screen. Always use the admin path printed by `php artisan xboard:install` instead of assuming a fixed hashed path.
+
+If you want to open the local web console directly in a normal browser, prefer this stable entry point instead of `flutter run -d web-server`:
+
+```bash
+bash scripts/serve_web_local.sh
+```
+
+By default it serves the built web app on `http://127.0.0.1:3006` and points it at the local `app_api` on `http://127.0.0.1:8787`.
 
 ### Step 3: OSS Remote Config (Recommended)
 
@@ -249,11 +321,11 @@ If you need professional customization:
 | 🎨 **UI Customization** | Custom colors, layout changes, exclusive features |
 | 🔐 **Auth System** | Device authorization, Multi-device management, Expiry alerts |
 
-Contact **[@fluxdeveloper](https://t.me/fluxdeveloper)** for support.
+Replace this line with your own support contact.
 
 ### ☕ Support Open Source
 
-If Flux helps you, consider a donation:
+If you want to keep a donation section, replace it with your own payment details:
 
 | USDT (TRC20) | USDC (Arbitrum) | ETH (Arbitrum) |
 | :---: | :---: | :---: |
@@ -265,7 +337,7 @@ If Flux helps you, consider a donation:
 
 *   [Sing-box](https://github.com/SagerNet/sing-box) - Universal Proxy Platform
 *   [Xray-core](https://github.com/XTLS/Xray-core) - Network Tool
-*   [V2Board](https://github.com/v2board/v2board) - Admin Panel
+*   Upstream panel implementation - keep this aligned with your deployed backend version
 *   [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel) - High Performance TUN
 
 ---
@@ -275,4 +347,4 @@ If Flux helps you, consider a donation:
 MIT License - Free for commercial use.
 
 ---
-> **Tags**: V2Board Client, White-label VPN, Flutter Proxy, Commercial VPN Source, Airport Business, Anti-Censorship, Traffic Monetization
+> **Tags**: White-label VPN, Flutter Proxy, Commercial VPN Source, Airport Business, Anti-Censorship, Traffic Monetization

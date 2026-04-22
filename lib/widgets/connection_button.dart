@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
-import 'flux_loader.dart';
+import 'capybara_loader.dart';
 
 enum ConnectionButtonStatus {
   disconnected,
@@ -117,7 +117,7 @@ class ConnectionButton extends StatelessWidget {
                       ),
                       child: Center(
                         child: isLoading
-                            ? FluxLoader(
+                            ? CapybaraLoader(
                                 size: 56 * 0.6,
                                 color: Colors.white70,
                               )

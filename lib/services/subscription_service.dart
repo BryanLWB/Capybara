@@ -1,104 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:yaml/yaml.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/server_node.dart';
-import '../utils/user_agent_utils.dart';
-import 'v2board_api.dart';
+import 'app_api.dart';
 
 /// 订阅服务
 class SubscriptionService {
-  final V2BoardApi _api = V2BoardApi();
+  final AppApi _api = AppApi();
 
-  /// 获取真实的订阅链接
-  Future<String> getSubscriptionUrl() async {
+  /// 获取订阅内容（由中间层代理）
+  Future<String> getSubscriptionContent({String? flag}) async {
     try {
-      final response = await _api.getUserSubscribe();
-      final data = response['data'];
-      if (data is Map && data.containsKey('subscribe_url')) {
-        return data['subscribe_url'].toString();
-      }
-      print('[SubscriptionService] Invalid data format: $data');
-      throw Exception('API response does not contain subscribe_url');
+      return await _api.getSubscriptionContent(flag: flag);
     } catch (e) {
-      print('[SubscriptionService] Error fetching subscription URL: $e');
-      // 给一个兜底（如果已经有 token 的话）
+      print('[SubscriptionService] Error fetching subscription content: $e');
       rethrow;
     }
-  }
-
-  /// 下载订阅文件
-  Future<String> downloadSubscription(String url) async {
-    int retryCount = 0;
-    const maxRetries = 3;
-
-    while (retryCount < maxRetries) {
-      try {
-        if (url.startsWith('vmess://') ||
-            url.startsWith('vless://') ||
-            url.startsWith('trojan://') ||
-            url.startsWith('ss://') ||
-            url.startsWith('hy2://') ||
-            url.startsWith('hysteria2://') ||
-            url.startsWith('tuic://') ||
-            url.startsWith('wg://') ||
-            url.startsWith('wireguard://')) {
-          return url;
-        }
-
-        final client = http.Client();
-        try {
-          var current = Uri.parse(url);
-          const maxRedirects = 5;
-          http.Response? response;
-
-          for (var i = 0; i < maxRedirects; i++) {
-            final request = http.Request('GET', current)
-              ..followRedirects = false
-              ..headers.addAll({'User-Agent': 'Flux/1.0', 'Accept': '*/*'});
-            final streamed = await client.send(request);
-            response = await http.Response.fromStream(streamed);
-
-            if (response.statusCode >= 300 && response.statusCode < 400) {
-              final location = response.headers['location'];
-              if (location == null || location.isEmpty) {
-                throw Exception('Redirect without location');
-              }
-              current = current.resolve(location);
-              continue;
-            }
-            break;
-          }
-          response ??= await client.get(
-            current,
-            headers: {'User-Agent': UserAgentUtils.userAgent, 'Accept': '*/*'},
-          );
-
-          if (response.statusCode == 200) {
-            return response.body;
-          } else {
-            throw Exception(
-              'Failed to download subscription: ${response.statusCode}',
-            );
-          }
-        } finally {
-          client.close();
-        }
-      } catch (e) {
-        retryCount++;
-        print('[SubscriptionService] Download attempt $retryCount failed: $e');
-        if (retryCount >= maxRetries) {
-          throw Exception(
-            'Error downloading subscription after $maxRetries attempts: $e',
-          );
-        }
-        // 等待一秒后重试
-        await Future.delayed(Duration(seconds: 1 * retryCount));
-      }
-    }
-    throw Exception('Unknown error during subscription download');
   }
 
   /// 检测订阅格式并解析
@@ -190,16 +109,13 @@ class SubscriptionService {
         }
       }
 
-      // 2. 从API获取订阅链接（带 token 的正式链接）
-      final subscriptionUrl = await getSubscriptionUrl();
+      // 2. 从中间层直接获取订阅内容
+      final subscriptionContent = await getSubscriptionContent();
 
-      // 3. 下载订阅文件
-      final subscriptionContent = await downloadSubscription(subscriptionUrl);
-
-      // 4. 解析节点列表（自动检测格式）
+      // 3. 解析节点列表（自动检测格式）
       final nodes = parseNodes(subscriptionContent);
 
-      // 5. 保存缓存
+      // 4. 保存缓存
       if (nodes.isNotEmpty) {
         await _saveSubscriptionCache(subscriptionContent);
       }

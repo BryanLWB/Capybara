@@ -3,12 +3,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/payment_method.dart';
 import '../models/plan.dart';
-import '../services/v2board_api.dart';
+import '../services/panel_api.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glow_button.dart';
 import '../widgets/gradient_card.dart';
 import '../widgets/section_header.dart';
-import '../widgets/flux_loader.dart';
+import '../widgets/capybara_loader.dart';
 
 import 'order_success_screen.dart';
 
@@ -28,7 +28,7 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  final _api = V2BoardApi();
+  final _api = PanelApi();
   final _couponController = TextEditingController();
   String _period = 'month_price';
   bool _loading = false;
@@ -416,7 +416,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             if (snapshot.hasError) {
               final err = snapshot.error;
               final message =
-                  err is V2BoardApiException ? err.message : (AppLocalizations.of(context)?.networkError ?? 'Network error');
+                  err is PanelApiException ? err.message : (AppLocalizations.of(context)?.networkError ?? 'Network error');
               return Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -441,7 +441,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               );
             }
             if (!snapshot.hasData) {
-              return const Center(child: FluxLoader(showTips: true));
+              return const Center(child: CapybaraLoader(showTips: true));
             }
             final methods = snapshot.data ?? [];
             if (methods.isNotEmpty && _method == null) {
