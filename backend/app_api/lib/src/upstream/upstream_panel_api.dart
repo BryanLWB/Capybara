@@ -315,6 +315,8 @@ class UpstreamPanelApi implements UpstreamApi {
     UpstreamAuth auth, {
     required String tradeNo,
     required int methodId,
+    String? origin,
+    String? referer,
   }) {
     return _post(
       '/api/v1/user/order/checkout',
@@ -322,6 +324,10 @@ class UpstreamPanelApi implements UpstreamApi {
       body: {
         'trade_no': tradeNo,
         'method': '$methodId',
+      },
+      headers: <String, String>{
+        if (_trimmedOrNull(origin) != null) 'Origin': origin!.trim(),
+        if (_trimmedOrNull(referer) != null) 'Referer': referer!.trim(),
       },
     );
   }
@@ -560,8 +566,9 @@ class UpstreamPanelApi implements UpstreamApi {
     String path, {
     UpstreamAuth? auth,
     required Map<String, dynamic> body,
+    Map<String, String>? headers,
   }) async {
-    return _send('POST', path, auth: auth, body: body);
+    return _send('POST', path, auth: auth, body: body, headers: headers);
   }
 
   Future<Map<String, dynamic>> _send(
@@ -570,6 +577,7 @@ class UpstreamPanelApi implements UpstreamApi {
     UpstreamAuth? auth,
     Map<String, String>? query,
     Map<String, dynamic>? body,
+    Map<String, String>? headers,
   }) async {
     final target = _baseUri
         .replace(
@@ -577,18 +585,21 @@ class UpstreamPanelApi implements UpstreamApi {
           queryParameters: query,
         )
         .replace(queryParameters: query);
-    final headers = _neutralHeaders();
+    final requestHeaders = <String, String>{
+      ..._neutralHeaders(),
+      if (headers != null) ...headers,
+    };
     if (auth != null && auth.authorization.isNotEmpty) {
-      headers['Authorization'] = auth.authorization;
+      requestHeaders['Authorization'] = auth.authorization;
     }
     if (body != null) {
-      headers['Content-Type'] = 'application/json';
+      requestHeaders['Content-Type'] = 'application/json';
     }
 
     final response = method == 'GET'
-        ? await _client.get(target, headers: headers).timeout(_timeout)
+        ? await _client.get(target, headers: requestHeaders).timeout(_timeout)
         : await _client
-            .post(target, headers: headers, body: jsonEncode(body))
+            .post(target, headers: requestHeaders, body: jsonEncode(body))
             .timeout(_timeout);
 
     _logger.fine('$method $target -> ${response.statusCode}');

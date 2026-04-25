@@ -1,0 +1,29 @@
+{
+  email admin@{$ROOT_DOMAIN}
+}
+
+{$ROOT_DOMAIN} {
+  encode gzip zstd
+
+  @app_api path /api/app*
+  handle @app_api {
+    reverse_proxy app-api:8787
+  }
+
+  handle {
+    reverse_proxy xboard-web:7001
+  }
+}
+
+{$WWW_DOMAIN} {
+  encode gzip zstd
+
+  @app_api path /api/app*
+  handle @app_api {
+    reverse_proxy app-api:8787
+  }
+
+  handle {
+    reverse_proxy web-static:80
+  }
+}

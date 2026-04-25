@@ -78,6 +78,11 @@ Middleware _jsonResponse() {
 }
 
 class _AppApiService {
+  static const String _guestConfigCacheControl =
+      'public, s-maxage=60, stale-while-revalidate=300';
+  static const Duration _clientVersionCacheTtl = Duration(minutes: 5);
+  static const Duration _helpContentCacheTtl = Duration(minutes: 5);
+
   _AppApiService({
     required this.config,
     required this.sessionStore,
@@ -95,6 +100,12 @@ class _AppApiService {
   final Router _router;
   final Random _random = Random.secure();
   static const Duration _subscriptionAccessTtl = Duration(days: 365);
+  _TimedCacheEntry<Map<String, dynamic>>? _clientVersionCache;
+  final Map<String, _TimedCacheEntry<Object?>> _helpArticlesCache =
+      <String, _TimedCacheEntry<Object?>>{};
+  final Map<String, _TimedCacheEntry<Map<String, dynamic>>>
+      _helpArticleDetailCache =
+      <String, _TimedCacheEntry<Map<String, dynamic>>>{};
 
   Router get router => _router;
 
@@ -114,6 +125,7 @@ class _AppApiService {
     _router.get('/api/app/v1/public/config', _guestConfig);
     _router.get('/api/app/v1/catalog/plans', _plans);
     _router.get('/api/app/v1/account/profile', _profile);
+    _router.get('/api/app/v1/account/bootstrap', _accountBootstrap);
     _router.get('/api/app/v1/account/preferences', _userConfig);
     _router.patch('/api/app/v1/account/notifications', _updateNotifications);
     _router.post('/api/app/v1/account/password/change', _changePassword);
@@ -161,6 +173,7 @@ class _AppApiService {
     _router.get('/api/app/v1/client/version', _clientVersion);
     _router.get('/api/app/v1/client/downloads', _clientDownloads);
     _router.get('/api/app/v1/client/import-options', _clientImportOptions);
+    _router.get('/api/app/v1/web/bootstrap', _webBootstrap);
 
     _router.all('/<ignored|.*>', (Request request) {
       return _error('route.not_found', 'Request failed', HttpStatus.notFound);
@@ -180,6 +193,12 @@ class _AppApiService {
         ttl: config.sessionTtl,
       );
       final profile = await upstreamApi.fetchUserProfile(auth);
+      await _storeSessionOwnerKey(
+        record,
+        Map<String, dynamic>.from(
+          profile['data'] as Map? ?? const <String, dynamic>{},
+        ),
+      );
       await _jitter();
       return _ok(<String, dynamic>{
         'session': <String, dynamic>{
@@ -207,6 +226,12 @@ class _AppApiService {
         ttl: config.sessionTtl,
       );
       final profile = await upstreamApi.fetchUserProfile(auth);
+      await _storeSessionOwnerKey(
+        record,
+        Map<String, dynamic>.from(
+          profile['data'] as Map? ?? const <String, dynamic>{},
+        ),
+      );
       await _jitter();
       return _ok(<String, dynamic>{
         'session': <String, dynamic>{
@@ -270,6 +295,8 @@ class _AppApiService {
       final configData = await upstreamApi.fetchGuestConfig();
       return _ok(<String, dynamic>{
         'config': _mapGuestConfig(configData['data'] as Map? ?? const {}),
+      }, headers: <String, String>{
+        'cache-control': _guestConfigCacheControl,
       });
     });
   }
@@ -281,9 +308,9 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final profile = await upstreamApi.fetchUserProfile(_toAuth(session));
+      final profile = await _fetchProfileData(session);
       return _ok(<String, dynamic>{
-        'account': _mapAccount(profile['data'] as Map? ?? const {}),
+        'account': _mapAccount(profile),
       });
     });
   }
@@ -295,46 +322,52 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final auth = _toAuth(session);
-      final configData = await upstreamApi.fetchUserConfig(auth);
-      final profileData = await upstreamApi.fetchUserProfile(auth);
+      final configData = await upstreamApi.fetchUserConfig(_toAuth(session));
       final config = Map<String, dynamic>.from(
         configData['data'] as Map? ?? const {},
       );
-      final profile = Map<String, dynamic>.from(
-        profileData['data'] as Map? ?? const {},
-      );
-      String? telegramBindUrl;
-      String? telegramBindCommand;
-      if (_toBool(config['is_telegram']) && !_toBool(profile['telegram_id'])) {
-        try {
-          final botInfo = await upstreamApi.fetchTelegramBotInfo(auth);
-          final username = _trimmedOrNull(botInfo['data'] is Map
-              ? (botInfo['data'] as Map)['username']
-              : null);
-          final subscribeSummary =
-              await upstreamApi.fetchSubscriptionSummary(auth);
-          final subscribeUrl = _trimmedOrNull(
-            subscribeSummary['data'] is Map
-                ? (subscribeSummary['data'] as Map)['subscribe_url']
-                : null,
-          );
-          if (username != null) {
-            telegramBindUrl = 'https://t.me/$username';
-          }
-          if (subscribeUrl != null) {
-            telegramBindCommand = '/bind $subscribeUrl';
-          }
-        } catch (_) {
-          // Keep profile rendering available even when telegram bot details fail.
-        }
-      }
       return _ok(<String, dynamic>{
-        'config': _mapUserConfig(
-          config,
-          telegramBindUrl: telegramBindUrl,
-          telegramBindCommand: telegramBindCommand,
-        ),
+        'config': _mapUserConfig(config),
+      });
+    });
+  }
+
+  Future<Response> _accountBootstrap(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final payload = await _loadAccountBootstrapPayload(
+        session,
+        includeTelegramBinding: true,
+      );
+      return _ok(payload.toJson());
+    });
+  }
+
+  Future<Response> _webBootstrap(Request request) async {
+    final session = await _requireSession(request);
+    if (session == null) {
+      return _error(
+          'auth.required', 'Authentication required', HttpStatus.unauthorized);
+    }
+    return _withUpstreamGuard(() async {
+      final auth = _toAuth(session);
+      final accountFuture = _loadAccountBootstrapPayload(
+        session,
+        includeTelegramBinding: false,
+      );
+      final plansFuture = upstreamApi.fetchPlans(auth);
+      final noticesFuture = upstreamApi.fetchNotices(auth);
+      final payload = await accountFuture;
+      final plans = await plansFuture;
+      final notices = await noticesFuture;
+      return _ok(<String, dynamic>{
+        ...payload.toJson(),
+        'plans': plans.map(_mapPlan).toList(),
+        'notices': notices.map(_mapNotice).toList(),
       });
     });
   }
@@ -390,10 +423,13 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final summary =
-          await upstreamApi.fetchSubscriptionSummary(_toAuth(session));
+      final auth = _toAuth(session);
+      final summary = await _loadSubscriptionPayload(
+        auth,
+        fallbackProfileLoader: () => _fetchProfileData(session),
+      );
       return _ok(<String, dynamic>{
-        'subscription': _mapSubscription(summary['data'] as Map? ?? const {}),
+        'subscription': summary.subscription,
       });
     });
   }
@@ -438,7 +474,7 @@ class _AppApiService {
           HttpStatus.badRequest,
         );
       }
-      final accessContext = await _subscriptionAccessContext(auth);
+      final accessContext = await _subscriptionAccessContext(session);
       await upstreamApi.resetSubscriptionSecurity(auth);
       final generation =
           await sessionStore.bumpSubscriptionGeneration(accessContext.ownerKey);
@@ -477,7 +513,7 @@ class _AppApiService {
           HttpStatus.badRequest,
         );
       }
-      final accessContext = await _subscriptionAccessContext(auth);
+      final accessContext = await _subscriptionAccessContext(session);
       final flag = _trimmedOrNull(body['flag']);
       final access = await sessionStore.createSubscriptionAccess(
         upstreamToken: session.upstreamToken,
@@ -583,12 +619,12 @@ class _AppApiService {
     final language =
         _normalizeHelpLanguage(request.url.queryParameters['language']);
     return _withUpstreamGuard(() async {
-      final articles = await upstreamApi.fetchHelpArticles(
+      final articles = await _loadHelpArticlesData(
         _toAuth(session),
         language: language,
       );
       return _ok(<String, dynamic>{
-        'categories': _mapHelpCategories(articles['data']),
+        'categories': _mapHelpCategories(articles),
       });
     });
   }
@@ -606,13 +642,13 @@ class _AppApiService {
     final language =
         _normalizeHelpLanguage(request.url.queryParameters['language']);
     return _withUpstreamGuard(() async {
-      final article = await upstreamApi.fetchHelpArticleDetail(
+      final article = await _loadHelpArticleDetailData(
         _toAuth(session),
         articleId: parsedId,
         language: language,
       );
       return _ok(<String, dynamic>{
-        'article': _mapHelpArticleDetail(article['data'] as Map? ?? const {}),
+        'article': _mapHelpArticleDetail(article),
       });
     });
   }
@@ -751,11 +787,15 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     final body = await _jsonBody(request);
+    final checkoutOrigin = _checkoutSourceOrigin(request);
+    final checkoutReferer = _checkoutSourceReferer(request);
     return _withUpstreamGuard(() async {
       final result = await upstreamApi.checkoutOrder(
         _toAuth(session),
         tradeNo: orderId,
         methodId: (body['payment_method_id'] as num?)?.toInt() ?? 0,
+        origin: checkoutOrigin,
+        referer: checkoutReferer,
       );
       return _ok(<String, dynamic>{
         'action': _mapCheckoutAction(result),
@@ -1081,10 +1121,9 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final versionData =
-          await upstreamApi.fetchClientVersion(_toAuth(session));
+      final versionData = await _loadClientVersionData(session);
       return _ok(<String, dynamic>{
-        'version': versionData['data'] ?? const <String, dynamic>{},
+        'version': versionData,
       });
     });
   }
@@ -1096,10 +1135,9 @@ class _AppApiService {
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
     return _withUpstreamGuard(() async {
-      final versionData =
-          await upstreamApi.fetchClientVersion(_toAuth(session));
+      final versionData = await _loadClientVersionData(session);
       return _ok(<String, dynamic>{
-        'items': _mapClientDownloads(versionData['data']),
+        'items': _mapClientDownloads(versionData),
       });
     });
   }
@@ -1135,6 +1173,181 @@ class _AppApiService {
       );
       return _ok(<String, dynamic>{'items': options});
     });
+  }
+
+  Future<Map<String, dynamic>> _fetchProfileData(SessionRecord session) async {
+    final profileResponse =
+        await upstreamApi.fetchUserProfile(_toAuth(session));
+    final profile = Map<String, dynamic>.from(
+      profileResponse['data'] as Map? ?? const {},
+    );
+    await _storeSessionOwnerKey(session, profile);
+    return profile;
+  }
+
+  Future<void> _storeSessionOwnerKey(
+    SessionRecord session,
+    Map<String, dynamic> profile,
+  ) async {
+    final ownerKey = _subscriptionOwnerKeyOrNull(profile);
+    if (ownerKey == null || ownerKey == session.ownerKey) {
+      return;
+    }
+    await sessionStore.write(session.copyWith(ownerKey: ownerKey));
+  }
+
+  Future<_AccountBootstrapPayload> _loadAccountBootstrapPayload(
+    SessionRecord session, {
+    required bool includeTelegramBinding,
+  }) async {
+    final auth = _toAuth(session);
+    final profileFuture = _fetchProfileData(session);
+    final configFuture = upstreamApi.fetchUserConfig(auth);
+    final summaryFuture = upstreamApi.fetchSubscriptionSummary(auth);
+
+    final profile = await profileFuture;
+    final configResponse = await configFuture;
+    final config = Map<String, dynamic>.from(
+      configResponse['data'] as Map? ?? const {},
+    );
+    final summary = await _loadSubscriptionPayload(
+      auth,
+      summaryFuture: summaryFuture,
+      fallbackProfileLoader: () async => profile,
+    );
+    final telegramBinding = includeTelegramBinding
+        ? await _loadTelegramBindingData(
+            auth,
+            config: config,
+            profile: profile,
+            subscribeUrl: summary.subscribeUrl,
+          )
+        : const _TelegramBindingData();
+
+    return _AccountBootstrapPayload(
+      account: _mapAccount(profile),
+      config: _mapUserConfig(
+        config,
+        telegramBindUrl: telegramBinding.bindUrl,
+        telegramBindCommand: telegramBinding.bindCommand,
+      ),
+      subscription: summary.subscription,
+    );
+  }
+
+  Future<_SubscriptionPayload> _loadSubscriptionPayload(
+    UpstreamAuth auth, {
+    Future<Map<String, dynamic>>? summaryFuture,
+    Future<Map<String, dynamic>> Function()? fallbackProfileLoader,
+  }) async {
+    try {
+      final response =
+          await (summaryFuture ?? upstreamApi.fetchSubscriptionSummary(auth));
+      final raw = Map<String, dynamic>.from(
+        response['data'] as Map? ?? const {},
+      );
+      return _SubscriptionPayload(
+        subscription: _mapSubscription(raw),
+        subscribeUrl: _trimmedOrNull(raw['subscribe_url']),
+      );
+    } on UpstreamException catch (error) {
+      if (error.statusCode < 500 || fallbackProfileLoader == null) {
+        rethrow;
+      }
+      _logger.warning(
+        'subscription summary upstream ${error.statusCode}; falling back to profile',
+      );
+      final profile = await fallbackProfileLoader();
+      return _SubscriptionPayload(
+        subscription: _mapSubscriptionFromAccount(profile),
+      );
+    }
+  }
+
+  Future<_TelegramBindingData> _loadTelegramBindingData(
+    UpstreamAuth auth, {
+    required Map<String, dynamic> config,
+    required Map<String, dynamic> profile,
+    String? subscribeUrl,
+  }) async {
+    if (!_toBool(config['is_telegram']) || _toBool(profile['telegram_id'])) {
+      return const _TelegramBindingData();
+    }
+    try {
+      final botInfo = await upstreamApi.fetchTelegramBotInfo(auth);
+      final username = _trimmedOrNull(
+          botInfo['data'] is Map ? (botInfo['data'] as Map)['username'] : null);
+      return _TelegramBindingData(
+        bindUrl: username == null ? null : 'https://t.me/$username',
+        bindCommand: subscribeUrl == null ? null : '/bind $subscribeUrl',
+      );
+    } catch (_) {
+      return const _TelegramBindingData();
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadClientVersionData(
+    SessionRecord session,
+  ) async {
+    final cached = _clientVersionCache;
+    if (cached != null && !cached.isExpired) {
+      return cached.value;
+    }
+    final response = await upstreamApi.fetchClientVersion(_toAuth(session));
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    _clientVersionCache = _TimedCacheEntry(
+      value: data,
+      expiresAt: DateTime.now().add(_clientVersionCacheTtl),
+    );
+    return data;
+  }
+
+  Future<Object?> _loadHelpArticlesData(
+    UpstreamAuth auth, {
+    required String language,
+  }) async {
+    final cached = _helpArticlesCache[language];
+    if (cached != null && !cached.isExpired) {
+      return cached.value;
+    }
+    final response = await upstreamApi.fetchHelpArticles(
+      auth,
+      language: language,
+    );
+    final raw = response['data'];
+    final data = raw is Map ? Map<String, dynamic>.from(raw) : raw;
+    _helpArticlesCache[language] = _TimedCacheEntry(
+      value: data,
+      expiresAt: DateTime.now().add(_helpContentCacheTtl),
+    );
+    return data;
+  }
+
+  Future<Map<String, dynamic>> _loadHelpArticleDetailData(
+    UpstreamAuth auth, {
+    required int articleId,
+    required String language,
+  }) async {
+    final cacheKey = '$language:$articleId';
+    final cached = _helpArticleDetailCache[cacheKey];
+    if (cached != null && !cached.isExpired) {
+      return cached.value;
+    }
+    final response = await upstreamApi.fetchHelpArticleDetail(
+      auth,
+      articleId: articleId,
+      language: language,
+    );
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
+    );
+    _helpArticleDetailCache[cacheKey] = _TimedCacheEntry(
+      value: data,
+      expiresAt: DateTime.now().add(_helpContentCacheTtl),
+    );
+    return data;
   }
 
   Future<Response> _withUpstreamGuard(
@@ -1191,8 +1404,14 @@ class _AppApiService {
     );
   }
 
-  Response _ok(Map<String, dynamic> data) {
-    return Response.ok(jsonEncode(<String, dynamic>{'data': data}));
+  Response _ok(
+    Map<String, dynamic> data, {
+    Map<String, String>? headers,
+  }) {
+    return Response.ok(
+      jsonEncode(<String, dynamic>{'data': data}),
+      headers: headers,
+    );
   }
 
   Response _error(String code, String message, int statusCode) {
@@ -1222,6 +1441,18 @@ class _AppApiService {
   }
 
   Map<String, dynamic> _mapSubscription(Map raw) {
+    return <String, dynamic>{
+      'upload_bytes': raw['u'] ?? 0,
+      'download_bytes': raw['d'] ?? 0,
+      'total_bytes': raw['transfer_enable'] ?? 0,
+      'expiry_at': raw['expired_at'] ?? 0,
+      'reset_days': raw['reset_day'] ?? 0,
+      'plan_id': raw['plan_id'] ?? 0,
+      'download_endpoint': '/api/app/v1/account/subscription/content',
+    };
+  }
+
+  Map<String, dynamic> _mapSubscriptionFromAccount(Map raw) {
     return <String, dynamic>{
       'upload_bytes': raw['u'] ?? 0,
       'download_bytes': raw['d'] ?? 0,
@@ -1398,6 +1629,54 @@ class _AppApiService {
       'payload': payload,
       'code': type,
     };
+  }
+
+  String? _checkoutSourceOrigin(Request request) {
+    final headerOrigin = _normalizedOrigin(request.headers['origin']);
+    if (headerOrigin != null) {
+      return headerOrigin;
+    }
+
+    final headerReferer = _trimmedOrNull(request.headers['referer']);
+    final refererUri =
+        headerReferer == null ? null : Uri.tryParse(headerReferer);
+    final refererOrigin = _uriOrigin(refererUri);
+    if (refererOrigin != null) {
+      return refererOrigin;
+    }
+
+    return _uriOrigin(request.requestedUri);
+  }
+
+  String? _checkoutSourceReferer(Request request) {
+    final headerReferer = _trimmedOrNull(request.headers['referer']);
+    final refererUri =
+        headerReferer == null ? null : Uri.tryParse(headerReferer);
+    if (_uriOrigin(refererUri) != null) {
+      return refererUri.toString();
+    }
+
+    final origin = _checkoutSourceOrigin(request);
+    if (origin != null) {
+      return '$origin/';
+    }
+    return null;
+  }
+
+  String? _normalizedOrigin(String? raw) {
+    final value = _trimmedOrNull(raw);
+    if (value == null) return null;
+    final uri = Uri.tryParse(value);
+    return _uriOrigin(uri);
+  }
+
+  String? _uriOrigin(Uri? uri) {
+    if (uri == null) return null;
+    final scheme = uri.scheme.toLowerCase();
+    if ((scheme != 'http' && scheme != 'https') || uri.host.isEmpty) {
+      return null;
+    }
+    return '${uri.scheme}://${uri.authority}';
   }
 
   List<Map<String, dynamic>> _mapInviteCodes(List rawCodes) {
@@ -1739,7 +2018,7 @@ class _AppApiService {
   }) async {
     final label = Uri.encodeComponent('Capybara');
     final accessUrlCache = <String, Future<String>>{};
-    final accessContext = await _subscriptionAccessContext(_toAuth(session));
+    final accessContext = await _subscriptionAccessContext(session);
 
     Future<String> accessUrlFor(String flag) async {
       return accessUrlCache.putIfAbsent(flag, () async {
@@ -1888,13 +2167,9 @@ class _AppApiService {
   }
 
   Future<_SubscriptionAccessContext> _subscriptionAccessContext(
-    UpstreamAuth auth,
+    SessionRecord session,
   ) async {
-    final profileResponse = await upstreamApi.fetchUserProfile(auth);
-    final profile = Map<String, dynamic>.from(
-      profileResponse['data'] as Map? ?? const {},
-    );
-    final ownerKey = _subscriptionOwnerKey(profile);
+    final ownerKey = session.ownerKey ?? await _resolveSessionOwnerKey(session);
     final generation = await sessionStore.readSubscriptionGeneration(ownerKey);
     return _SubscriptionAccessContext(
       ownerKey: ownerKey,
@@ -1902,7 +2177,16 @@ class _AppApiService {
     );
   }
 
-  String _subscriptionOwnerKey(Map<String, dynamic> profile) {
+  Future<String> _resolveSessionOwnerKey(SessionRecord session) async {
+    final profile = await _fetchProfileData(session);
+    final ownerKey = _subscriptionOwnerKeyOrNull(profile);
+    if (ownerKey != null) {
+      return ownerKey;
+    }
+    throw StateError('subscription owner key unavailable');
+  }
+
+  String? _subscriptionOwnerKeyOrNull(Map<String, dynamic> profile) {
     final rawId = _trimmedOrNull(profile['id']?.toString());
     if (rawId != null) {
       return 'uid:$rawId';
@@ -1911,7 +2195,7 @@ class _AppApiService {
     if (rawEmail != null) {
       return 'email:${rawEmail.toLowerCase()}';
     }
-    throw StateError('subscription owner key unavailable');
+    return null;
   }
 
   Uri _requestOrigin(Request request) {
@@ -2029,4 +2313,54 @@ class _SubscriptionAccessContext {
 
   final String ownerKey;
   final int generation;
+}
+
+class _AccountBootstrapPayload {
+  const _AccountBootstrapPayload({
+    required this.account,
+    required this.config,
+    required this.subscription,
+  });
+
+  final Map<String, dynamic> account;
+  final Map<String, dynamic> config;
+  final Map<String, dynamic> subscription;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'account': account,
+        'config': config,
+        'subscription': subscription,
+      };
+}
+
+class _SubscriptionPayload {
+  const _SubscriptionPayload({
+    required this.subscription,
+    this.subscribeUrl,
+  });
+
+  final Map<String, dynamic> subscription;
+  final String? subscribeUrl;
+}
+
+class _TelegramBindingData {
+  const _TelegramBindingData({
+    this.bindUrl,
+    this.bindCommand,
+  });
+
+  final String? bindUrl;
+  final String? bindCommand;
+}
+
+class _TimedCacheEntry<T> {
+  const _TimedCacheEntry({
+    required this.value,
+    required this.expiresAt,
+  });
+
+  final T value;
+  final DateTime expiresAt;
+
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
 }

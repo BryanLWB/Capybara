@@ -130,6 +130,39 @@ void main() {
     expect(encoded, contains('download_endpoint'));
   });
 
+  test(
+      'subscription summary falls back to profile when upstream is transiently unavailable',
+      () async {
+    upstreamApi.subscriptionSummaryFailure = UpstreamException(
+      statusCode: 500,
+      message: 'upstream subscribe not ready',
+    );
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/account/subscription'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    final subscription = data['subscription'] as Map<String, dynamic>;
+
+    expect(subscription['total_bytes'], 1024);
+    expect(subscription['expiry_at'], 1700000000);
+    expect(subscription['plan_id'], 1);
+    expect(jsonEncode(payload).toLowerCase(), isNot(contains('subscribe_url')));
+  });
+
   test('catalog plans can be fetched without authentication', () async {
     final response = await handler(
       Request(
@@ -147,6 +180,29 @@ void main() {
     expect(
       (items.first as Map<String, dynamic>)['transfer_bytes'],
       10 * 1024 * 1024 * 1024,
+    );
+  });
+
+  test('guest config includes cache headers for Cloudflare edge caching',
+      () async {
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/public/config'),
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    expect(
+      response.headers['cache-control'],
+      'public, s-maxage=60, stale-while-revalidate=300',
+    );
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    expect(
+      data['config'],
+      containsPair('email_verification_required', 1),
     );
   });
 
@@ -177,6 +233,47 @@ void main() {
       (items.first as Map<String, dynamic>)['transfer_bytes'],
       2 * 1024 * 1024 * 1024,
     );
+  });
+
+  test('web bootstrap aggregates home payload in a single app_api request',
+      () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ownerKey: 'email:u@example.com',
+      ttl: const Duration(hours: 1),
+    );
+    upstreamApi.noticesResponse = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 99,
+        'title': '维护通知',
+        'content': '今晚维护',
+        'created_at': 1700000100,
+      },
+    ];
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/web/bootstrap'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    expect(data['account'], isA<Map<String, dynamic>>());
+    expect(data['subscription'], isA<Map<String, dynamic>>());
+    expect(data['config'], isA<Map<String, dynamic>>());
+    expect(data['plans'], isA<List<dynamic>>());
+    expect(data['notices'], isA<List<dynamic>>());
+    expect(upstreamApi.fetchUserProfileCalls, 1);
+    expect(upstreamApi.fetchUserConfigCalls, 1);
+    expect(upstreamApi.fetchSubscriptionSummaryCalls, 1);
+    expect(upstreamApi.fetchPlansCalls, 1);
+    expect(upstreamApi.fetchNoticesCalls, 1);
   });
 
   test('help knowledge list is grouped by category', () async {
@@ -215,6 +312,56 @@ void main() {
         ],
       },
     );
+  });
+
+  test('help knowledge responses reuse cached upstream payloads', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final listUri = Uri.parse(
+        'http://localhost/api/app/v1/content/help/articles?language=zh-CN');
+    final detailUri = Uri.parse(
+      'http://localhost/api/app/v1/content/help/articles/11?language=zh-CN',
+    );
+
+    final firstList = await handler(
+      Request(
+        'GET',
+        listUri,
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+    final secondList = await handler(
+      Request(
+        'GET',
+        listUri,
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+    final firstDetail = await handler(
+      Request(
+        'GET',
+        detailUri,
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+    final secondDetail = await handler(
+      Request(
+        'GET',
+        detailUri,
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(firstList.statusCode, 200);
+    expect(secondList.statusCode, 200);
+    expect(firstDetail.statusCode, 200);
+    expect(secondDetail.statusCode, 200);
+    expect(upstreamApi.fetchHelpArticlesCalls, 1);
+    expect(upstreamApi.fetchHelpArticleDetailCalls, 1);
   });
 
   test('help knowledge detail exposes article html body', () async {
@@ -505,7 +652,8 @@ void main() {
     expect(data['account'], containsPair('remind_traffic', true));
   });
 
-  test('account preferences expose telegram binding helpers', () async {
+  test('account preferences stay lightweight without telegram binding fetches',
+      () async {
     final session = await sessionStore.create(
       upstreamToken: 'upstream-token',
       upstreamAuth: 'Bearer upstream-auth',
@@ -527,6 +675,34 @@ void main() {
         as Map<String, dynamic>);
     expect(config['telegram_enabled'], 1);
     expect(config['telegram_discuss_link'], 'https://t.me/capybara_group');
+    expect(config['telegram_bind_url'], isNull);
+    expect(config['telegram_bind_command'], isNull);
+    expect(upstreamApi.fetchUserProfileCalls, 0);
+    expect(upstreamApi.fetchTelegramBotInfoCalls, 0);
+    expect(upstreamApi.fetchSubscriptionSummaryCalls, 0);
+  });
+
+  test('account bootstrap exposes telegram binding helpers', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ownerKey: 'email:u@example.com',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/account/bootstrap'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final config = ((payload['data'] as Map<String, dynamic>)['config']
+        as Map<String, dynamic>);
     expect(config['telegram_bind_url'], 'https://t.me/capybara_bot');
     expect(
       config['telegram_bind_command'],
@@ -538,6 +714,7 @@ void main() {
     final session = await sessionStore.create(
       upstreamToken: 'upstream-token',
       upstreamAuth: 'Bearer upstream-auth',
+      ownerKey: 'email:u@example.com',
       ttl: const Duration(hours: 1),
     );
 
@@ -558,6 +735,36 @@ void main() {
     expect(items, hasLength(2));
     expect((items.first as Map<String, dynamic>)['client_key'], 'shadowrocket');
     expect(items.first['action_type'], 'deep_link');
+    expect(upstreamApi.fetchUserProfileCalls, 0);
+    expect(upstreamApi.fetchSubscriptionSummaryCalls, 1);
+  });
+
+  test('client version and downloads share cached upstream version payload',
+      () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final versionResponse = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/client/version'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+    final downloadsResponse = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/client/downloads'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(versionResponse.statusCode, 200);
+    expect(downloadsResponse.statusCode, 200);
+    expect(upstreamApi.fetchClientVersionCalls, 1);
   });
 
   test('client import options require active subscription', () async {
@@ -714,8 +921,8 @@ void main() {
     );
 
     expect(initialResponse.statusCode, 200);
-    final initialPayload =
-        jsonDecode(await initialResponse.readAsString()) as Map<String, dynamic>;
+    final initialPayload = jsonDecode(await initialResponse.readAsString())
+        as Map<String, dynamic>;
     final initialData = initialPayload['data'] as Map<String, dynamic>;
     final initialSubscription =
         initialData['subscription'] as Map<String, dynamic>;
@@ -1277,6 +1484,8 @@ void main() {
           headers: <String, String>{
             'authorization': 'Bearer ${session.id}',
             'content-type': 'application/json',
+            'origin': 'https://www.kapi-net.com',
+            'referer': 'https://www.kapi-net.com/purchase',
           },
           body: jsonEncode(<String, dynamic>{'payment_method_id': 2}),
         ),
@@ -1295,6 +1504,8 @@ void main() {
       }),
       containsPair('kind', 'redirect'),
     );
+    expect(upstreamApi.checkoutOrigin, 'https://www.kapi-net.com');
+    expect(upstreamApi.checkoutReferer, 'https://www.kapi-net.com/purchase');
     expect(
       await checkout(<String, dynamic>{'type': 0, 'data': 'qr-payload'}),
       containsPair('kind', 'qr_code'),
@@ -1380,6 +1591,15 @@ class _FakeUpstreamApi implements UpstreamApi {
   int transferredCommissionCents = 0;
   int balanceCents = 123;
   int withdrawableCommissionCents = 900;
+  int fetchUserConfigCalls = 0;
+  int fetchUserProfileCalls = 0;
+  int fetchSubscriptionSummaryCalls = 0;
+  int fetchPlansCalls = 0;
+  int fetchNoticesCalls = 0;
+  int fetchClientVersionCalls = 0;
+  int fetchTelegramBotInfoCalls = 0;
+  int fetchHelpArticlesCalls = 0;
+  int fetchHelpArticleDetailCalls = 0;
   int inviteRecordsPage = 1;
   int inviteRecordsPageSize = 10;
   int? validatedCouponPlanId;
@@ -1451,6 +1671,7 @@ class _FakeUpstreamApi implements UpstreamApi {
     },
   };
   List<Map<String, dynamic>> fetchOrdersResponse = <Map<String, dynamic>>[];
+  List<Map<String, dynamic>> noticesResponse = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> fetchServersResponse = <Map<String, dynamic>>[
     <String, dynamic>{
       'id': 101,
@@ -1522,6 +1743,8 @@ class _FakeUpstreamApi implements UpstreamApi {
     'type': 0,
     'data': true,
   };
+  String? checkoutOrigin;
+  String? checkoutReferer;
   Map<String, dynamic> subscriptionSummary = <String, dynamic>{
     'data': <String, dynamic>{
       'u': 10,
@@ -1532,6 +1755,7 @@ class _FakeUpstreamApi implements UpstreamApi {
       'subscribe_url': 'https://panel.example.test/s/token',
     },
   };
+  Object? subscriptionSummaryFailure;
   Map<String, dynamic> redeemGiftCardResponse = <String, dynamic>{
     'status': 'success',
     'data': <String, dynamic>{
@@ -1584,7 +1808,11 @@ class _FakeUpstreamApi implements UpstreamApi {
     UpstreamAuth auth, {
     required String tradeNo,
     required int methodId,
+    String? origin,
+    String? referer,
   }) async {
+    checkoutOrigin = origin;
+    checkoutReferer = referer;
     return checkoutResult;
   }
 
@@ -1632,7 +1860,8 @@ class _FakeUpstreamApi implements UpstreamApi {
   }) async {
     fetchedOrderDetailRef = tradeNo;
     final response = Map<String, dynamic>.from(orderDetailResponse);
-    final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+    final data =
+        Map<String, dynamic>.from(response['data'] as Map? ?? const {});
     data['trade_no'] = tradeNo;
     response['data'] = data;
     return response;
@@ -1645,38 +1874,46 @@ class _FakeUpstreamApi implements UpstreamApi {
       };
 
   @override
-  Future<Map<String, dynamic>> fetchClientVersion(UpstreamAuth auth) async =>
-      <String, dynamic>{
-        'data': <String, dynamic>{
-          'windows_version': '1.0.0',
-          'windows_download_url': 'https://download.example.test/windows.exe',
-          'macos_version': '1.0.0',
-          'macos_download_url': 'https://download.example.test/macos.dmg',
-          'android_version': '1.0.0',
-          'android_download_url': 'https://download.example.test/android.apk',
-        }
-      };
+  Future<Map<String, dynamic>> fetchClientVersion(UpstreamAuth auth) async {
+    fetchClientVersionCalls += 1;
+    return <String, dynamic>{
+      'data': <String, dynamic>{
+        'windows_version': '1.0.0',
+        'windows_download_url': 'https://download.example.test/windows.exe',
+        'macos_version': '1.0.0',
+        'macos_download_url': 'https://download.example.test/macos.dmg',
+        'android_version': '1.0.0',
+        'android_download_url': 'https://download.example.test/android.apk',
+      }
+    };
+  }
 
   @override
-  Future<Map<String, dynamic>> fetchTelegramBotInfo(UpstreamAuth auth) async =>
-      <String, dynamic>{
-        'data': <String, dynamic>{'username': 'capybara_bot'},
-      };
+  Future<Map<String, dynamic>> fetchTelegramBotInfo(UpstreamAuth auth) async {
+    fetchTelegramBotInfoCalls += 1;
+    return <String, dynamic>{
+      'data': <String, dynamic>{'username': 'capybara_bot'},
+    };
+  }
 
   @override
   Future<Map<String, dynamic>> fetchHelpArticleDetail(
     UpstreamAuth auth, {
     required int articleId,
     required String language,
-  }) async =>
-      helpArticleDetail;
+  }) async {
+    fetchHelpArticleDetailCalls += 1;
+    return helpArticleDetail;
+  }
 
   @override
   Future<Map<String, dynamic>> fetchHelpArticles(
     UpstreamAuth auth, {
     required String language,
-  }) async =>
-      helpArticleCategories;
+  }) async {
+    fetchHelpArticlesCalls += 1;
+    return helpArticleCategories;
+  }
 
   @override
   Future<Map<String, dynamic>> fetchGuestConfig() async => <String, dynamic>{
@@ -1730,8 +1967,10 @@ class _FakeUpstreamApi implements UpstreamApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchNotices(UpstreamAuth auth) async =>
-      <Map<String, dynamic>>[];
+  Future<List<Map<String, dynamic>>> fetchNotices(UpstreamAuth auth) async {
+    fetchNoticesCalls += 1;
+    return noticesResponse;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> fetchServers(UpstreamAuth auth) async =>
@@ -1747,8 +1986,10 @@ class _FakeUpstreamApi implements UpstreamApi {
       <Map<String, dynamic>>[];
 
   @override
-  Future<List<Map<String, dynamic>>> fetchPlans(UpstreamAuth auth) async =>
-      plansResponse;
+  Future<List<Map<String, dynamic>>> fetchPlans(UpstreamAuth auth) async {
+    fetchPlansCalls += 1;
+    return plansResponse;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> fetchTickets(UpstreamAuth auth) async =>
@@ -1768,8 +2009,14 @@ class _FakeUpstreamApi implements UpstreamApi {
 
   @override
   Future<Map<String, dynamic>> fetchSubscriptionSummary(
-          UpstreamAuth auth) async =>
-      subscriptionSummary;
+      UpstreamAuth auth) async {
+    fetchSubscriptionSummaryCalls += 1;
+    final failure = subscriptionSummaryFailure;
+    if (failure is Exception) {
+      throw failure;
+    }
+    return subscriptionSummary;
+  }
 
   @override
   Future<String> fetchSubscriptionContent(UpstreamAuth auth,
@@ -1779,36 +2026,40 @@ class _FakeUpstreamApi implements UpstreamApi {
   }
 
   @override
-  Future<Map<String, dynamic>> fetchUserConfig(UpstreamAuth auth) async =>
-      <String, dynamic>{
-        'data': <String, dynamic>{
-          'is_telegram': 1,
-          'telegram_discuss_link': 'https://t.me/capybara_group',
-          'currency_symbol': '¥',
-          'withdraw_methods': <String>['alipay', 'wechat'],
-          'withdraw_close': 0,
-        }
-      };
+  Future<Map<String, dynamic>> fetchUserConfig(UpstreamAuth auth) async {
+    fetchUserConfigCalls += 1;
+    return <String, dynamic>{
+      'data': <String, dynamic>{
+        'is_telegram': 1,
+        'telegram_discuss_link': 'https://t.me/capybara_group',
+        'currency_symbol': '¥',
+        'withdraw_methods': <String>['alipay', 'wechat'],
+        'withdraw_close': 0,
+      }
+    };
+  }
 
   @override
-  Future<Map<String, dynamic>> fetchUserProfile(UpstreamAuth auth) async =>
-      <String, dynamic>{
-        'data': <String, dynamic>{
-          'email': 'u@example.com',
-          'balance': balanceCents,
-          'plan_id': 1,
-          'transfer_enable': 1024,
-          'expired_at': 1700000000,
-          'avatar_url': 'https://example.com/avatar.png',
-          'uuid': 'uuid-1',
-          'telegram_id': telegramId,
-          'remind_expire':
-              updatedRemindExpire == null ? 1 : (updatedRemindExpire! ? 1 : 0),
-          'remind_traffic': updatedRemindTraffic == null
-              ? 0
-              : (updatedRemindTraffic! ? 1 : 0),
-        },
-      };
+  Future<Map<String, dynamic>> fetchUserProfile(UpstreamAuth auth) async {
+    fetchUserProfileCalls += 1;
+    return <String, dynamic>{
+      'data': <String, dynamic>{
+        'id': 42,
+        'email': 'u@example.com',
+        'balance': balanceCents,
+        'plan_id': 1,
+        'transfer_enable': 1024,
+        'expired_at': 1700000000,
+        'avatar_url': 'https://example.com/avatar.png',
+        'uuid': 'uuid-1',
+        'telegram_id': telegramId,
+        'remind_expire':
+            updatedRemindExpire == null ? 1 : (updatedRemindExpire! ? 1 : 0),
+        'remind_traffic':
+            updatedRemindTraffic == null ? 0 : (updatedRemindTraffic! ? 1 : 0),
+      },
+    };
+  }
 
   @override
   Future<void> generateInviteCode(UpstreamAuth auth) async {

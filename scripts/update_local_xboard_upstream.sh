@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 XBOARD_DIR="${ROOT_DIR}/upstreams/xboard"
 COMPOSE_FILE="${ROOT_DIR}/docker/xboard-local.compose.yaml"
 BACKUP_ROOT="${ROOT_DIR}/.local/xboard-backups"
+LOCAL_RUNTIME_DIR="${ROOT_DIR}/.runtime/local-xboard"
 TIMESTAMP="$(date +"%Y%m%d-%H%M%S")"
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
 APPLY_MIGRATIONS=false
@@ -49,13 +50,13 @@ mkdir -p "${BACKUP_DIR}"
 
 echo "Creating local backup in ${BACKUP_DIR} ..."
 
-if [[ -f "${XBOARD_DIR}/.env" ]]; then
-  cp -a "${XBOARD_DIR}/.env" "${BACKUP_DIR}/xboard.env"
+if [[ -f "${LOCAL_RUNTIME_DIR}/xboard.env" ]]; then
+  cp -a "${LOCAL_RUNTIME_DIR}/xboard.env" "${BACKUP_DIR}/xboard.env"
 fi
 
-if [[ -d "${XBOARD_DIR}/.docker/.data" ]]; then
+if [[ -d "${LOCAL_RUNTIME_DIR}/xboard-data" ]]; then
   mkdir -p "${BACKUP_DIR}/docker-data"
-  cp -a "${XBOARD_DIR}/.docker/.data/." "${BACKUP_DIR}/docker-data/"
+  cp -a "${LOCAL_RUNTIME_DIR}/xboard-data/." "${BACKUP_DIR}/docker-data/"
 fi
 
 if [[ -d "${XBOARD_DIR}/storage/app" ]]; then
@@ -112,8 +113,8 @@ Backup:          ${BACKUP_DIR}
 Rollback outline:
 1. docker compose -f docker/xboard-local.compose.yaml stop web horizon ws-server redis
 2. git -C upstreams/xboard checkout ${CURRENT_COMMIT}
-3. restore ${BACKUP_DIR}/xboard.env to upstreams/xboard/.env
-4. restore ${BACKUP_DIR}/docker-data to upstreams/xboard/.docker/.data
+3. restore ${BACKUP_DIR}/xboard.env to .runtime/local-xboard/xboard.env
+4. restore ${BACKUP_DIR}/docker-data to .runtime/local-xboard/xboard-data
 5. restore ${BACKUP_DIR}/storage-app to upstreams/xboard/storage/app
 6. if needed, restore ${BACKUP_DIR}/redis-volume.tar.gz back into ${REDIS_VOLUME_NAME}
 7. bash scripts/prepare_local_xboard.sh

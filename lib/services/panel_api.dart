@@ -30,7 +30,8 @@ class PanelApi {
   Future<Map<String, dynamic>> getPlans() async {
     try {
       final response = await _appApi.getPlans();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final items = (data['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => _mapPlan(Map<String, dynamic>.from(item)))
@@ -48,8 +49,10 @@ class PanelApi {
   Future<Map<String, dynamic>> getGuestConfig() async {
     try {
       final response = await _appApi.getGuestConfig();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
-      final config = Map<String, dynamic>.from(data['config'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final config =
+          Map<String, dynamic>.from(data['config'] as Map? ?? const {});
       return <String, dynamic>{
         'data': _mapGuestConfig(config),
       };
@@ -61,10 +64,48 @@ class PanelApi {
   Future<Map<String, dynamic>> getUserCommonConfig() async {
     try {
       final response = await _appApi.getUserConfig();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
-      final config = Map<String, dynamic>.from(data['config'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final config =
+          Map<String, dynamic>.from(data['config'] as Map? ?? const {});
       return <String, dynamic>{
         'data': _mapUserConfig(config),
+      };
+    } on AppApiException catch (error) {
+      throw _toLegacy(error);
+    }
+  }
+
+  Future<Map<String, dynamic>> getWebBootstrap() async {
+    try {
+      final response = await _appApi.getWebBootstrap();
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final account = Map<String, dynamic>.from(
+        data['account'] as Map? ?? const {},
+      );
+      final config = Map<String, dynamic>.from(
+        data['config'] as Map? ?? const {},
+      );
+      final subscription = Map<String, dynamic>.from(
+        data['subscription'] as Map? ?? const {},
+      );
+      final plans = (data['plans'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => _mapPlan(Map<String, dynamic>.from(item)))
+          .toList();
+      final notices = (data['notices'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => _mapNotice(Map<String, dynamic>.from(item)))
+          .toList();
+      return <String, dynamic>{
+        'data': <String, dynamic>{
+          'account': _mapAccount(account),
+          'config': _mapUserConfig(config),
+          'subscription': _mapSubscription(subscription),
+          'plans': plans,
+          'notices': notices,
+        },
       };
     } on AppApiException catch (error) {
       throw _toLegacy(error);
@@ -75,7 +116,8 @@ class PanelApi {
     try {
       final response = await _appApi.login(email, password);
       final data = response['data'] as Map? ?? const {};
-      final session = Map<String, dynamic>.from(data['session'] as Map? ?? const {});
+      final session =
+          Map<String, dynamic>.from(data['session'] as Map? ?? const {});
       return <String, dynamic>{
         'data': <String, dynamic>{
           'session_token': session['token'],
@@ -104,7 +146,8 @@ class PanelApi {
         recaptchaData: recaptchaData,
       );
       final data = response['data'] as Map? ?? const {};
-      final session = Map<String, dynamic>.from(data['session'] as Map? ?? const {});
+      final session =
+          Map<String, dynamic>.from(data['session'] as Map? ?? const {});
       return <String, dynamic>{
         'data': <String, dynamic>{
           'session_token': session['token'],
@@ -153,13 +196,16 @@ class PanelApi {
 
   Future<Map<String, dynamic>> getTempToken() async {
     final session = await _config.getSessionToken();
-    return <String, dynamic>{'data': <String, dynamic>{'session_token': session}};
+    return <String, dynamic>{
+      'data': <String, dynamic>{'session_token': session}
+    };
   }
 
   Future<Map<String, dynamic>> getAppConfig() async {
     try {
       final response = await _appApi.getClientConfig();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       return <String, dynamic>{
         'data': data['config'] ?? const <String, dynamic>{},
       };
@@ -171,7 +217,8 @@ class PanelApi {
   Future<Map<String, dynamic>> getAppVersion() async {
     try {
       final response = await _appApi.getClientVersion();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       return <String, dynamic>{
         'data': data['version'] ?? const <String, dynamic>{},
       };
@@ -192,7 +239,8 @@ class PanelApi {
   Future<Map<String, dynamic>> getUserInfo() async {
     try {
       final response = await _appApi.getProfile();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final account =
           Map<String, dynamic>.from(data['account'] as Map? ?? const {});
       return <String, dynamic>{'data': _mapAccount(account)};
@@ -204,7 +252,8 @@ class PanelApi {
   Future<Map<String, dynamic>> getUserSubscribe() async {
     try {
       final response = await _appApi.getSubscriptionSummary();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final subscription = Map<String, dynamic>.from(
         data['subscription'] as Map? ?? const {},
       );
@@ -217,7 +266,8 @@ class PanelApi {
   Future<Map<String, dynamic>> fetchNotice() async {
     try {
       final response = await _appApi.getNotices();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final items = (data['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => _mapNotice(Map<String, dynamic>.from(item)))
@@ -260,7 +310,8 @@ class PanelApi {
         period,
         couponCode: couponCode,
       );
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       return <String, dynamic>{
         'data': data['order_ref'],
       };
@@ -275,7 +326,8 @@ class PanelApi {
   ) async {
     try {
       final response = await _appApi.checkoutOrder(tradeNo, methodId);
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final action = Map<String, dynamic>.from(
         data['action'] as Map? ?? const {},
       );
@@ -291,7 +343,8 @@ class PanelApi {
   Future<Map<String, dynamic>> checkOrder(String tradeNo) async {
     try {
       final response = await _appApi.getOrderStatus(tradeNo);
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       return <String, dynamic>{'data': data['state_code'] ?? 0};
     } on AppApiException catch (error) {
       throw _toLegacy(error);
@@ -301,7 +354,8 @@ class PanelApi {
   Future<Map<String, dynamic>> getPaymentMethods() async {
     try {
       final response = await _appApi.getPaymentMethods();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final items = (data['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => _mapPaymentMethod(Map<String, dynamic>.from(item)))
@@ -324,7 +378,8 @@ class PanelApi {
   Future<Map<String, dynamic>> fetchOrders() async {
     try {
       final response = await _appApi.getOrders();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final items = (data['items'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => _mapOrder(Map<String, dynamic>.from(item)))
@@ -338,8 +393,10 @@ class PanelApi {
   Future<InviteFetchData> fetchInviteData() async {
     try {
       final response = await _appApi.getInviteOverview();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
-      final metrics = Map<String, dynamic>.from(data['metrics'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final metrics =
+          Map<String, dynamic>.from(data['metrics'] as Map? ?? const {});
       final codes = (data['codes'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => _mapInviteCode(Map<String, dynamic>.from(item)))
@@ -370,10 +427,12 @@ class PanelApi {
   Future<List<InviteDetail>> fetchInviteDetails() async {
     try {
       final response = await _appApi.getInviteRecords();
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final items = (data['items'] as List? ?? const [])
           .whereType<Map>()
-          .map((item) => InviteDetail.fromJson(_mapInviteRecord(Map<String, dynamic>.from(item))))
+          .map((item) => InviteDetail.fromJson(
+              _mapInviteRecord(Map<String, dynamic>.from(item))))
           .toList();
       return items;
     } on AppApiException catch (error) {
@@ -384,7 +443,8 @@ class PanelApi {
   Future<bool> redeemGiftCard(String code) async {
     try {
       final response = await _appApi.redeemGiftCode(code);
-      final data = Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+      final data =
+          Map<String, dynamic>.from(response['data'] as Map? ?? const {});
       final result = data['result'];
       return result is Map ? result['ok'] == true : false;
     } on AppApiException catch (error) {
@@ -429,7 +489,8 @@ class PanelApi {
       'id': plan['plan_id'] ?? 0,
       'name': plan['title'] ?? 'Plan',
       'content': plan['summary'],
-      'transfer_enable': _toNum(plan['transfer_bytes']).toInt() ~/ 1024 ~/ 1024 ~/ 1024,
+      'transfer_enable':
+          _toNum(plan['transfer_bytes']).toInt() ~/ 1024 ~/ 1024 ~/ 1024,
       'month_price': plan['monthly_amount'],
       'quarter_price': plan['quarterly_amount'],
       'half_year_price': plan['half_year_amount'],

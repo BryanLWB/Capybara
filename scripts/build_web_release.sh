@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_CONFIG_URLS="${APP_CONFIG_URLS:-}"
+APP_API_DEFAULT_DOMAIN="${APP_API_DEFAULT_DOMAIN:-}"
+
+cd "${ROOT_DIR}"
+
+flutter pub get
+
+build_args=(
+  build
+  web
+  --no-wasm-dry-run
+  "--dart-define=APP_CONFIG_URLS=${APP_CONFIG_URLS}"
+)
+
+if [[ -n "${APP_API_DEFAULT_DOMAIN}" ]]; then
+  build_args+=("--dart-define=APP_API_DEFAULT_DOMAIN=${APP_API_DEFAULT_DOMAIN}")
+fi
+
+flutter "${build_args[@]}"
+
+build_id="$(date -u +%Y%m%d%H%M%S)"
+printf '%s\n' "${build_id}" > "${ROOT_DIR}/build/web/.last_build_id"
+
+bootstrap_file="${ROOT_DIR}/build/web/flutter_bootstrap.js"
+if ! grep -q '"mainJsPath":"main.dart.js"' "${bootstrap_file}"; then
+  echo "Failed to find main.dart.js bootstrap entry." >&2
+  exit 1
+fi
+perl -0pi -e 's/"mainJsPath":"main\.dart\.js"/"mainJsPath":"main.dart.js?v='"${build_id}"'"/' \
+  "${bootstrap_file}"
+
+index_file="${ROOT_DIR}/build/web/index.html"
+if ! grep -q 'src="flutter_bootstrap.js"' "${index_file}"; then
+  echo "Failed to find flutter_bootstrap.js entry in index.html." >&2
+  exit 1
+fi
+perl -0pi -e 's/src="flutter_bootstrap\.js"/src="flutter_bootstrap.js?v='"${build_id}"'"/' \
+  "${index_file}"
+
+headers_file="${ROOT_DIR}/web/_headers"
+if [[ ! -f "${headers_file}" ]]; then
+  echo "Missing Cloudflare Pages headers file: ${headers_file}" >&2
+  exit 1
+fi
+cp "${headers_file}" "${ROOT_DIR}/build/web/_headers"
+
+mkdir -p "${ROOT_DIR}/build/web/payment-icons"
+cp "${ROOT_DIR}"/deploy/test-server/static/payment-icons/*.svg \
+  "${ROOT_DIR}/build/web/payment-icons/"
+
+echo "Web release build is ready at ${ROOT_DIR}/build/web"

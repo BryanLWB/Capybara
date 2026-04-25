@@ -6,9 +6,11 @@ import 'panel_api.dart';
 class UserDataService {
   static final UserDataService _instance = UserDataService._internal();
   factory UserDataService() => _instance;
-  UserDataService._internal();
+  UserDataService._internal() : _api = PanelApi();
 
-  final PanelApi _api = PanelApi();
+  UserDataService.withApi(this._api);
+
+  final PanelApi _api;
 
   // 缓存数据
   UserInfo? _userInfo;
@@ -25,11 +27,11 @@ class UserDataService {
   DateTime? _noticesFetchTime;
 
   // 缓存有效期 (秒)
-  static const int _userCacheSeconds = 60;      // 用户信息 60秒
+  static const int _userCacheSeconds = 60; // 用户信息 60秒
   static const int _commConfigCacheSeconds = 3600; // 通用配置 1小时 (很少变)
-  static const int _subscribeCacheSeconds = 30;  // 订阅信息 30秒
-  static const int _plansCacheSeconds = 300;     // 套餐列表 5分钟
-  static const int _noticesCacheSeconds = 120;   // 公告 2分钟
+  static const int _subscribeCacheSeconds = 30; // 订阅信息 30秒
+  static const int _plansCacheSeconds = 300; // 套餐列表 5分钟
+  static const int _noticesCacheSeconds = 120; // 公告 2分钟
 
   /// 检查缓存是否有效
   bool _isCacheValid(DateTime? fetchTime, int validSeconds) {
@@ -39,7 +41,8 @@ class UserDataService {
 
   /// 获取用户信息 (带缓存)
   Future<UserInfo> getUserInfo({bool forceRefresh = false}) async {
-    if (!forceRefresh && _userInfo != null && 
+    if (!forceRefresh &&
+        _userInfo != null &&
         _isCacheValid(_userInfoFetchTime, _userCacheSeconds)) {
       return _userInfo!;
     }
@@ -51,8 +54,10 @@ class UserDataService {
   }
 
   /// 获取通用配置 (带缓存，很少变)
-  Future<Map<String, dynamic>> getCommConfig({bool forceRefresh = false}) async {
-    if (!forceRefresh && _commConfig != null && 
+  Future<Map<String, dynamic>> getCommConfig(
+      {bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _commConfig != null &&
         _isCacheValid(_commConfigFetchTime, _commConfigCacheSeconds)) {
       return _commConfig!;
     }
@@ -64,21 +69,38 @@ class UserDataService {
   }
 
   /// 获取订阅信息 (带缓存)
-  Future<Map<String, dynamic>> getSubscribeInfo({bool forceRefresh = false}) async {
-    if (!forceRefresh && _subscribeInfo != null && 
+  Future<Map<String, dynamic>> getSubscribeInfo({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh &&
+        _subscribeInfo != null &&
         _isCacheValid(_subscribeFetchTime, _subscribeCacheSeconds)) {
       return _subscribeInfo!;
     }
 
-    final response = await _api.getUserSubscribe();
+    Map<String, dynamic> response;
+    try {
+      response = await _api.getUserSubscribe();
+    } on PanelApiException catch (error) {
+      if (error.statusCode < 500) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      try {
+        response = await _api.getUserSubscribe();
+      } on PanelApiException {
+        if (_subscribeInfo != null) return _subscribeInfo!;
+        rethrow;
+      }
+    }
     _subscribeInfo = response['data'] ?? {};
     _subscribeFetchTime = DateTime.now();
     return _subscribeInfo!;
   }
 
   /// 获取套餐列表 (带缓存)
-  Future<List<Map<String, dynamic>>> getPlans({bool forceRefresh = false}) async {
-    if (!forceRefresh && _plans != null && 
+  Future<List<Map<String, dynamic>>> getPlans(
+      {bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _plans != null &&
         _isCacheValid(_plansFetchTime, _plansCacheSeconds)) {
       return _plans!;
     }
@@ -98,8 +120,10 @@ class UserDataService {
   }
 
   /// 获取公告列表 (带缓存)
-  Future<List<Map<String, dynamic>>> getNotices({bool forceRefresh = false}) async {
-    if (!forceRefresh && _notices != null && 
+  Future<List<Map<String, dynamic>>> getNotices(
+      {bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _notices != null &&
         _isCacheValid(_noticesFetchTime, _noticesCacheSeconds)) {
       return _notices!;
     }
@@ -119,21 +143,64 @@ class UserDataService {
   }
 
   /// 并行获取账户页所需的所有数据 (智能缓存)
-  Future<Map<String, dynamic>> getAccountPageData({bool forceRefresh = false}) async {
-    // comm_config 有长缓存，单独处理
-    final commConfigFuture = getCommConfig(forceRefresh: forceRefresh);
-    
-    // 其他数据并行获取
-    final results = await Future.wait([
-      getUserInfo(forceRefresh: forceRefresh),
-      getSubscribeInfo(forceRefresh: forceRefresh),
-      commConfigFuture,
-    ]);
+  Future<Map<String, dynamic>> getAccountPageData({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh &&
+        _userInfo != null &&
+        _commConfig != null &&
+        _subscribeInfo != null &&
+        _plans != null &&
+        _notices != null &&
+        _isCacheValid(_userInfoFetchTime, _userCacheSeconds) &&
+        _isCacheValid(_commConfigFetchTime, _commConfigCacheSeconds) &&
+        _isCacheValid(_subscribeFetchTime, _subscribeCacheSeconds) &&
+        _isCacheValid(_plansFetchTime, _plansCacheSeconds) &&
+        _isCacheValid(_noticesFetchTime, _noticesCacheSeconds)) {
+      return <String, dynamic>{
+        'user': _userInfo!,
+        'subscribe': _subscribeInfo!,
+        'config': _commConfig!,
+      };
+    }
 
-    return {
-      'user': results[0] as UserInfo,
-      'subscribe': results[1] as Map<String, dynamic>,
-      'config': results[2] as Map<String, dynamic>,
+    final response = await _api.getWebBootstrap();
+    final data =
+        Map<String, dynamic>.from(response['data'] as Map? ?? const {});
+    final account = Map<String, dynamic>.from(
+      data['account'] as Map? ?? const {},
+    );
+    final config = Map<String, dynamic>.from(
+      data['config'] as Map? ?? const {},
+    );
+    final subscription = Map<String, dynamic>.from(
+      data['subscription'] as Map? ?? const {},
+    );
+    final plans = (data['plans'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final notices = (data['notices'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    final now = DateTime.now();
+    _userInfo = UserInfo.fromJson(account);
+    _commConfig = config;
+    _subscribeInfo = subscription;
+    _plans = plans;
+    _notices = notices;
+    _userInfoFetchTime = now;
+    _commConfigFetchTime = now;
+    _subscribeFetchTime = now;
+    _plansFetchTime = now;
+    _noticesFetchTime = now;
+
+    return <String, dynamic>{
+      'user': _userInfo!,
+      'subscribe': _subscribeInfo!,
+      'config': _commConfig!,
     };
   }
 
@@ -144,7 +211,7 @@ class UserDataService {
     _subscribeInfo = null;
     _plans = null;
     _notices = null;
-    
+
     _userInfoFetchTime = null;
     _commConfigFetchTime = null;
     _subscribeFetchTime = null;

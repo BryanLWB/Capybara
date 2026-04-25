@@ -45,11 +45,8 @@ app.*.map.json
 /android/app/release
 
 # Android related
-**/android/**/gradle-wrapper.jar
 **/android/.gradle
 **/android/captures/
-**/android/gradlew
-**/android/gradlew.bat
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/key.properties
@@ -109,10 +106,16 @@ build/
 *.aab
 *.ipa
 *.app
+.tmp/
+.wrangler/
+test-results/
 
 # Local configuration
 local.properties
 .env
 .env.localflux_source.zip
+.local/backend-mysql-backups/
 .local/xboard-admin-assets/
 .local/xboard-backups/
+.local/xboard-rebuild-backups/
+.runtime/

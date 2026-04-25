@@ -10,6 +10,7 @@ class SessionRecord {
     required this.id,
     required this.upstreamToken,
     required this.upstreamAuth,
+    this.ownerKey,
     required this.createdAt,
     required this.expiresAt,
   });
@@ -17,6 +18,7 @@ class SessionRecord {
   final String id;
   final String upstreamToken;
   final String upstreamAuth;
+  final String? ownerKey;
   final DateTime createdAt;
   final DateTime expiresAt;
 
@@ -26,6 +28,7 @@ class SessionRecord {
     String? id,
     String? upstreamToken,
     String? upstreamAuth,
+    String? ownerKey,
     DateTime? createdAt,
     DateTime? expiresAt,
   }) {
@@ -33,6 +36,7 @@ class SessionRecord {
       id: id ?? this.id,
       upstreamToken: upstreamToken ?? this.upstreamToken,
       upstreamAuth: upstreamAuth ?? this.upstreamAuth,
+      ownerKey: ownerKey ?? this.ownerKey,
       createdAt: createdAt ?? this.createdAt,
       expiresAt: expiresAt ?? this.expiresAt,
     );
@@ -42,6 +46,7 @@ class SessionRecord {
         'id': id,
         'upstream_token': upstreamToken,
         'upstream_auth': upstreamAuth,
+        'owner_key': ownerKey,
         'created_at': createdAt.toIso8601String(),
         'expires_at': expiresAt.toIso8601String(),
       };
@@ -51,6 +56,7 @@ class SessionRecord {
       id: json['id'] as String? ?? '',
       upstreamToken: json['upstream_token'] as String? ?? '',
       upstreamAuth: json['upstream_auth'] as String? ?? '',
+      ownerKey: json['owner_key'] as String?,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? '') ??
@@ -113,6 +119,7 @@ abstract class SessionStore {
   Future<SessionRecord> create({
     required String upstreamToken,
     required String upstreamAuth,
+    String? ownerKey,
     required Duration ttl,
   });
 
@@ -151,6 +158,7 @@ class MemorySessionStore implements SessionStore {
   Future<SessionRecord> create({
     required String upstreamToken,
     required String upstreamAuth,
+    String? ownerKey,
     required Duration ttl,
   }) async {
     final now = DateTime.now().toUtc();
@@ -158,6 +166,7 @@ class MemorySessionStore implements SessionStore {
       id: _newSessionId(),
       upstreamToken: upstreamToken,
       upstreamAuth: upstreamAuth,
+      ownerKey: ownerKey,
       createdAt: now,
       expiresAt: now.add(ttl),
     );
@@ -263,14 +272,14 @@ class RedisSessionStore implements SessionStore {
   static const String _subscriptionPrefix = 'app_api:subscription_access:';
   static const String _subscriptionGenerationPrefix =
       'app_api:subscription_generation:';
-  static const String _subscriptionOwnerPrefix =
-      'app_api:subscription_owner:';
+  static const String _subscriptionOwnerPrefix = 'app_api:subscription_owner:';
   final RedisClient _client;
 
   @override
   Future<SessionRecord> create({
     required String upstreamToken,
     required String upstreamAuth,
+    String? ownerKey,
     required Duration ttl,
   }) async {
     final now = DateTime.now().toUtc();
@@ -278,6 +287,7 @@ class RedisSessionStore implements SessionStore {
       id: _newSessionId(),
       upstreamToken: upstreamToken,
       upstreamAuth: upstreamAuth,
+      ownerKey: ownerKey,
       createdAt: now,
       expiresAt: now.add(ttl),
     );
@@ -351,7 +361,8 @@ class RedisSessionStore implements SessionStore {
       jsonEncode(record.toJson()),
       ttl.inSeconds,
     );
-    final accessIds = await _readOwnerAccessIds(ownerKey)..add(record.id);
+    final accessIds = await _readOwnerAccessIds(ownerKey)
+      ..add(record.id);
     await _writeOwnerAccessIds(ownerKey, accessIds);
     return record;
   }

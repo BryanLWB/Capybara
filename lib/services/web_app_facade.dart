@@ -22,15 +22,12 @@ class WebAppFacade {
     ApiConfig? config,
     UserDataService? userDataService,
   })  : _api = api ?? AppApi(config: config),
-        _config = config ?? ApiConfig(),
         _userDataService = userDataService ?? UserDataService();
 
   final AppApi _api;
-  final ApiConfig _config;
   final UserDataService _userDataService;
 
   Future<List<HelpCategory>> loadHelpCategories(String language) async {
-    await _config.refreshSessionCache();
     final response = await _api.getHelpArticles(language: language);
     final data = Map<String, dynamic>.from(
       response['data'] as Map? ?? const {},
@@ -47,7 +44,6 @@ class WebAppFacade {
     int articleId,
     String language,
   ) async {
-    await _config.refreshSessionCache();
     final response = await _api.getHelpArticle(
       articleId,
       language: language,
@@ -65,22 +61,16 @@ class WebAppFacade {
   }
 
   Future<WebHomeViewData> loadHomeData({bool forceRefresh = false}) async {
-    await _config.refreshSessionCache();
-    final results = await Future.wait([
-      _userDataService.getAccountPageData(forceRefresh: forceRefresh),
-      _userDataService.getPlans(forceRefresh: forceRefresh),
-      _userDataService.getNotices(forceRefresh: forceRefresh),
-    ]);
-    final accountData = Map<String, dynamic>.from(
-      results[0] as Map<String, dynamic>,
+    final accountData = await _userDataService.getAccountPageData(
+      forceRefresh: forceRefresh,
     );
     return WebHomeViewData.fromSources(
       user: accountData['user'] as UserInfo,
       subscription: Map<String, dynamic>.from(
         accountData['subscribe'] as Map? ?? const {},
       ),
-      plans: results[1] as List<Map<String, dynamic>>,
-      notices: results[2] as List<Map<String, dynamic>>,
+      plans: await _userDataService.getPlans(forceRefresh: forceRefresh),
+      notices: await _userDataService.getNotices(forceRefresh: forceRefresh),
     );
   }
 
@@ -130,46 +120,19 @@ class WebAppFacade {
   }
 
   Future<WebAccountProfileData> loadAccountProfile() async {
-    await _config.refreshSessionCache();
-    final responses = await Future.wait<Map<String, dynamic>>([
-      _api.getProfile(),
-      _api.getUserConfig(),
-    ]);
-    final profileData = Map<String, dynamic>.from(
-      responses[0]['data'] as Map? ?? const {},
-    );
-    final configData = Map<String, dynamic>.from(
-      responses[1]['data'] as Map? ?? const {},
-    );
-    return WebAccountProfileData.fromResponse(<String, dynamic>{
-      'data': <String, dynamic>{
-        'account': Map<String, dynamic>.from(
-          profileData['account'] as Map? ?? const {},
-        ),
-        'config': Map<String, dynamic>.from(
-          configData['config'] as Map? ?? const {},
-        ),
-      },
-    });
+    return WebAccountProfileData.fromResponse(await _api.getAccountBootstrap());
   }
 
   Future<int?> loadActiveSubscriptionPlanId() async {
-    await _config.refreshSessionCache();
-    final responses = await Future.wait<Map<String, dynamic>>([
-      _api.getProfile(),
-      _api.getSubscriptionSummary(),
-    ]);
-    final accountData = Map<String, dynamic>.from(
-      responses[0]['data'] as Map? ?? const {},
-    );
-    final subscriptionData = Map<String, dynamic>.from(
-      responses[1]['data'] as Map? ?? const {},
+    final response = await _api.getAccountBootstrap();
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
     );
     final account = Map<String, dynamic>.from(
-      accountData['account'] as Map? ?? const {},
+      data['account'] as Map? ?? const {},
     );
     final subscription = Map<String, dynamic>.from(
-      subscriptionData['subscription'] as Map? ?? const {},
+      data['subscription'] as Map? ?? const {},
     );
     final planId = _toInt(account['plan_id'] ?? subscription['plan_id']);
     final totalBytes = _toInt(subscription['total_bytes']);
@@ -211,7 +174,6 @@ class WebAppFacade {
     int page = 1,
     int pageSize = 10,
   }) async {
-    await _config.refreshSessionCache();
     final responses = await Future.wait<Map<String, dynamic>>([
       _api.getInviteOverview(),
       _api.getInviteRecords(page: page, pageSize: pageSize),

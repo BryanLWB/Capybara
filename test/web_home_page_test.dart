@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -196,6 +197,8 @@ void main() {
 
     WebShellSection? navigatedSection;
     String? requestedFlag;
+    var creatorCalls = 0;
+    var downloadsCalls = 0;
     String? clipboardText;
     const link = 'http://127.0.0.1:8787/api/app/v1/client/subscription/cl_test';
 
@@ -223,16 +226,20 @@ void main() {
           dataLoader: (_) =>
               SynchronousFuture(_homeData(hasSubscription: true)),
           subscriptionLinkCreator: (flag) async {
+            creatorCalls += 1;
             requestedFlag = flag;
             return link;
           },
-          downloadsLoader: () async => const <WebClientDownloadItem>[
-            WebClientDownloadItem(
-              platform: 'ios',
-              label: 'iOS',
-              available: false,
-            ),
-          ],
+          downloadsLoader: () async {
+            downloadsCalls += 1;
+            return const <WebClientDownloadItem>[
+              WebClientDownloadItem(
+                platform: 'ios',
+                label: 'iOS',
+                available: false,
+              ),
+            ];
+          },
         ),
       ),
     );
@@ -251,12 +258,16 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(link), findsOneWidget);
+    expect(creatorCalls, 1);
     await tester.tap(find.text('关闭'));
     await tester.pump(const Duration(milliseconds: 300));
 
     await tester.tap(find.text('下载客户端'));
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('下载客户端'));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(navigatedSection, WebShellSection.help);
+    expect(downloadsCalls, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -290,6 +301,43 @@ void main() {
 
     expect(creatorCalled, isFalse);
     expect(find.text('开通套餐后即可使用订阅链接。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web home renders static loading frame before data resolves',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final completer = Completer<WebHomeViewData>();
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () {},
+          dataLoader: (_) => completer.future,
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byKey(const Key('web-home-loading-state')), findsOneWidget);
+    expect(find.text('公告'), findsOneWidget);
+    expect(find.text('订阅概览'), findsOneWidget);
+    expect(find.text('快速开始'), findsOneWidget);
+
+    completer.complete(_homeData(hasSubscription: true));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const Key('web-home-loading-state')), findsNothing);
+    expect(find.text('流量使用'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

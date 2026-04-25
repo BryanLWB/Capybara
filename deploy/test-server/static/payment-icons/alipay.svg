@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Alipay Test Icon</title>
+  <desc id="desc">Test payment icon for Alipay</desc>
+  <rect width="128" height="128" rx="28" fill="#1677FF"/>
+  <path d="M28 39 H100" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M64 27 V83" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M39 55 H89" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M43 84 C56 73, 74 73, 88 84" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="39" cy="84" r="7" fill="#FFFFFF"/>
+  <circle cx="89" cy="84" r="7" fill="#FFFFFF"/>
+  <text x="64" y="111" text-anchor="middle" font-size="16" font-family="Arial, sans-serif" font-weight="700" fill="#FFFFFF">ALIPAY</text>
+</svg>

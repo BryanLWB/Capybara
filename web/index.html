@@ -33,7 +33,16 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <form id="capybara-auth-form" aria-hidden="true" style="display: none;"></form>
+  <form
+    id="capybara-auth-form"
+    aria-hidden="true"
+    autocomplete="on"
+    method="post"
+    action="javascript:void(0)"
+    novalidate
+    onsubmit="return false;"
+    style="display: none;"
+  ></form>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -46,6 +55,58 @@
     (() => {
       const formId = 'capybara-auth-form';
       const observedRoots = new WeakSet();
+      const ignoredInputTypes = new Set([
+        'button',
+        'checkbox',
+        'color',
+        'file',
+        'hidden',
+        'image',
+        'radio',
+        'range',
+        'reset',
+        'submit',
+      ]);
+
+      const form = document.getElementById(formId);
+      if (form instanceof HTMLFormElement) {
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      }
+
+      const scrubSensitiveQuery = () => {
+        const url = new URL(window.location.href);
+        const keys = Array.from(url.searchParams.keys());
+        const hasPasswordKey = keys.some((key) =>
+          key.toLowerCase().includes('password')
+        );
+        const hasNativeSubmitField = keys.some((key) =>
+          /^field_\d+$/i.test(key)
+        );
+        if (!hasPasswordKey && !hasNativeSubmitField) return;
+
+        keys.forEach((key) => {
+          const normalized = key.toLowerCase();
+          if (
+            normalized.includes('password') ||
+            normalized === 'username' ||
+            normalized === 'email' ||
+            normalized === 'email_code' ||
+            /^field_\d+$/i.test(key)
+          ) {
+            url.searchParams.delete(key);
+          }
+        });
+        window.history.replaceState(
+          null,
+          '',
+          `${url.pathname}${url.search}${url.hash}`
+        );
+      };
+
+      scrubSensitiveQuery();
 
       const visitRoots = (root, visitor) => {
         if (!root) return;
@@ -80,7 +141,10 @@
         let textCount = 0;
         collectInputs().forEach((element) => {
           if (!(element instanceof HTMLInputElement)) return;
-          if (element.type === 'hidden') return;
+          if (ignoredInputTypes.has(element.type)) {
+            element.removeAttribute('form');
+            return;
+          }
 
           element.setAttribute('form', formId);
 

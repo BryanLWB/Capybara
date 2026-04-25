@@ -1,0 +1,103 @@
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app-api
+      - web-static
+      - xboard-web
+    environment:
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-kapi-net.com}
+      WWW_DOMAIN: ${WWW_DOMAIN:-www.kapi-net.com}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ../deploy/test-server/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../.runtime/test-server/caddy-data:/data
+      - ../.runtime/test-server/caddy-config:/config
+
+  app-api:
+    image: dart:stable
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      - xboard-web
+      - redis
+    environment:
+      UPSTREAM_BASE_URL: http://xboard-web:7001
+      PORT: "8787"
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ../backend/app_api:/app
+    command: sh -lc "/usr/lib/dart/bin/dart pub get && exec /usr/lib/dart/bin/dart run bin/server.dart"
+
+  web-static:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ../build/web:/usr/share/nginx/html:ro
+      - ../deploy/test-server/web.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../deploy/test-server/static/payment-icons:/usr/share/nginx/html/payment-icons:ro
+
+  xboard-web:
+    image: ghcr.io/cedar2025/xboard:new
+    restart: unless-stopped
+    working_dir: /www
+    depends_on:
+      - redis
+    environment:
+      - docker=true
+    volumes:
+      - ../upstreams/xboard:/www
+      - ../.runtime/test-server/xboard.env:/www/.env
+      - ../.runtime/test-server/xboard-data:/www/.docker/.data
+      - ../.local/xboard-admin-assets:/www/public/assets/admin:ro
+      - ../scripts/xboard_sync_settings.php:/codex-scripts/xboard_sync_settings.php:ro
+      - xboard-redis-data:/data
+    command: sh -lc "php /codex-scripts/xboard_sync_settings.php >/dev/null 2>&1 || true; exec php artisan octane:start --port=7001 --host=0.0.0.0"
+
+  xboard-horizon:
+    image: ghcr.io/cedar2025/xboard:new
+    restart: unless-stopped
+    working_dir: /www
+    depends_on:
+      - redis
+    environment:
+      - docker=true
+    volumes:
+      - ../upstreams/xboard:/www
+      - ../.runtime/test-server/xboard.env:/www/.env
+      - ../.runtime/test-server/xboard-data:/www/.docker/.data
+      - xboard-redis-data:/data
+    command: php artisan horizon
+
+  xboard-ws-server:
+    image: ghcr.io/cedar2025/xboard:new
+    restart: unless-stopped
+    working_dir: /www
+    depends_on:
+      - redis
+    environment:
+      - docker=true
+    ports:
+      - "8076:8076"
+    volumes:
+      - ../upstreams/xboard:/www
+      - ../.runtime/test-server/xboard.env:/www/.env
+      - ../.runtime/test-server/xboard-data:/www/.docker/.data
+      - xboard-redis-data:/data
+    command: php artisan ws-server start --host=0.0.0.0 --port=8076
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --port 6379 --unixsocket /data/redis.sock --unixsocketperm 777
+    volumes:
+      - xboard-redis-data:/data
+    sysctls:
+      net.core.somaxconn: 1024
+
+volumes:
+  xboard-redis-data:

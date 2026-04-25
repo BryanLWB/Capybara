@@ -58,6 +58,9 @@ class _WebHomePageState extends State<WebHomePage> {
   late Future<WebHomeViewData> _future;
   String _selectedPlatform = 'ios';
   bool _quickActionBusy = false;
+  Future<List<WebClientDownloadItem>>? _downloadsFuture;
+  final Map<String, Future<String>> _subscriptionLinkFutures =
+      <String, Future<String>>{};
   final Map<String, Future<List<WebClientImportOptionData>>>
       _importOptionsFutures =
       <String, Future<List<WebClientImportOptionData>>>{};
@@ -103,17 +106,40 @@ class _WebHomePageState extends State<WebHomePage> {
 
   Future<String> _createAccessLink() async {
     final flag = _flagForPlatform(_selectedPlatform);
-    if (widget.subscriptionLinkCreator != null) {
-      return widget.subscriptionLinkCreator!(flag);
-    }
-    return _facade.createSubscriptionAccessLink(flag: flag);
+    return _subscriptionLinkFutures.putIfAbsent(flag, () async {
+      try {
+        final link = widget.subscriptionLinkCreator != null
+            ? await widget.subscriptionLinkCreator!(flag)
+            : await _facade.createSubscriptionAccessLink(flag: flag);
+        if (link.isEmpty) {
+          _subscriptionLinkFutures.remove(flag);
+        }
+        return link;
+      } catch (_) {
+        _subscriptionLinkFutures.remove(flag);
+        rethrow;
+      }
+    });
   }
 
   Future<List<WebClientDownloadItem>> _loadDownloads() async {
-    if (widget.downloadsLoader != null) {
-      return widget.downloadsLoader!();
+    final existing = _downloadsFuture;
+    if (existing != null) {
+      return existing;
     }
-    return _facade.loadClientDownloads();
+    final future = () async {
+      try {
+        if (widget.downloadsLoader != null) {
+          return await widget.downloadsLoader!();
+        }
+        return await _facade.loadClientDownloads();
+      } catch (_) {
+        _downloadsFuture = null;
+        rethrow;
+      }
+    }();
+    _downloadsFuture = future;
+    return future;
   }
 
   Future<List<WebClientImportOptionData>> _loadImportOptions(
@@ -415,7 +441,7 @@ class _WebHomePageState extends State<WebHomePage> {
         }
 
         if (!snapshot.hasData) {
-          return const Center(child: CapybaraLoader(showTips: true));
+          return _buildLoadingState(context, isChinese);
         }
 
         final data = snapshot.data!;
@@ -483,6 +509,142 @@ class _WebHomePageState extends State<WebHomePage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context, bool isChinese) {
+    final width = MediaQuery.of(context).size.width;
+    final isWide = WebLayoutMetrics.useWidePanels(width);
+    final compact = WebLayoutMetrics.compact(width);
+
+    return WebPageFrame(
+      key: const Key('web-home-loading-state'),
+      maxWidth: 1520,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLoadingCard(
+            context,
+            title: isChinese ? '公告' : 'Notices',
+            subtitle: isChinese
+                ? '页面已经可用，正在同步实时公告。'
+                : 'The page is ready. Syncing the latest notices.',
+            lines: const [0.42, 0.88, 0.72],
+          ),
+          SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+          _buildLoadingCard(
+            context,
+            title: isChinese ? '订阅概览' : 'Subscription overview',
+            subtitle: isChinese
+                ? '套餐、流量与到期时间会在后台同步。'
+                : 'Plan, traffic, and expiry data are loading in the background.',
+            lines: const [0.3, 0.64, 0.48, 0.82],
+          ),
+          SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+          if (isWide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildLoadingCard(
+                    context,
+                    title: isChinese ? '快速开始' : 'Quick start',
+                    lines:
+                        compact ? const [0.74, 0.64] : const [0.84, 0.7, 0.56],
+                    showLoader: false,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildLoadingCard(
+                    context,
+                    title: isChinese ? '常用入口' : 'Quick links',
+                    lines:
+                        compact ? const [0.76, 0.66] : const [0.8, 0.68, 0.6],
+                    showLoader: false,
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            _buildLoadingCard(
+              context,
+              title: isChinese ? '快速开始' : 'Quick start',
+              lines: compact ? const [0.74, 0.64] : const [0.84, 0.7, 0.56],
+              showLoader: false,
+            ),
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+            _buildLoadingCard(
+              context,
+              title: isChinese ? '常用入口' : 'Quick links',
+              lines: compact ? const [0.76, 0.66] : const [0.8, 0.68, 0.6],
+              showLoader: false,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingCard(
+    BuildContext context, {
+    required String title,
+    required List<double> lines,
+    String? subtitle,
+    bool showLoader = true,
+  }) {
+    final children = <Widget>[
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          if (showLoader) const CapybaraLoader(size: 20),
+        ],
+      ),
+      if (subtitle != null) ...[
+        const SizedBox(height: 10),
+        Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppColors.textSecondary,
+              ),
+        ),
+      ],
+      const SizedBox(height: 20),
+    ];
+
+    for (var i = 0; i < lines.length; i++) {
+      children.add(_buildLoadingLine(lines[i]));
+      if (i != lines.length - 1) {
+        children.add(const SizedBox(height: 12));
+      }
+    }
+
+    return GradientCard(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildLoadingLine(double widthFactor) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 14,
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.border),
+        ),
+      ),
     );
   }
 

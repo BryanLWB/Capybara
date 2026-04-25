@@ -208,7 +208,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('help page always requests zh-CN knowledge content',
+  testWidgets('help page requests locale-aware knowledge content',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 1600);
@@ -235,7 +235,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(loadedLanguage, 'zh-CN');
+    expect(loadedLanguage, 'en-US');
     expect(tester.takeException(), isNull);
   });
 }

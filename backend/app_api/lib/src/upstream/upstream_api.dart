@@ -107,6 +107,8 @@ abstract class UpstreamApi {
     UpstreamAuth auth, {
     required String tradeNo,
     required int methodId,
+    String? origin,
+    String? referer,
   });
 
   Future<int> checkOrder(UpstreamAuth auth, {required String tradeNo});
