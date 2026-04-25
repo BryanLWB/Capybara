@@ -217,7 +217,6 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, null);
     });
-
     await tester.pumpWidget(
       _desktopHost(
         WebHomePage(
@@ -344,12 +343,13 @@ void main() {
   testWidgets('web home keeps all import options visible when subscribed',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.physicalSize = const Size(1440, 1200);
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
 
+    final importCalls = <String, int>{};
     await tester.pumpWidget(
       _desktopHost(
         WebHomePage(
@@ -357,32 +357,39 @@ void main() {
           onUnauthorized: () {},
           dataLoader: (_) =>
               SynchronousFuture(_homeData(hasSubscription: true)),
-          importOptionsLoader: (_) async => const <WebClientImportOptionData>[
-            WebClientImportOptionData(
-              clientKey: 'shadowrocket',
-              displayName: 'Shadowrocket',
-              supported: true,
-              actionType: 'deep_link',
-              actionValue: 'shadowrocket://import',
-              protocolHint: 'shadowrocket',
-            ),
-            WebClientImportOptionData(
-              clientKey: 'quantumultx',
-              displayName: 'Quantumult X',
-              supported: true,
-              actionType: 'copy_link',
-              actionValue: 'quantumult-x://import',
-              protocolHint: 'quantumultx',
-            ),
-            WebClientImportOptionData(
-              clientKey: 'surge',
-              displayName: 'Surge',
-              supported: true,
-              actionType: 'copy_link',
-              actionValue: 'surge://import',
-              protocolHint: 'surge',
-            ),
-          ],
+          importOptionsLoader: (platform) async {
+            importCalls.update(
+              platform,
+              (value) => value + 1,
+              ifAbsent: () => 1,
+            );
+            return const <WebClientImportOptionData>[
+              WebClientImportOptionData(
+                clientKey: 'shadowrocket',
+                displayName: 'Shadowrocket',
+                supported: true,
+                actionType: 'deep_link',
+                actionValue: 'shadowrocket://import',
+                protocolHint: 'shadowrocket',
+              ),
+              WebClientImportOptionData(
+                clientKey: 'quantumultx',
+                displayName: 'Quantumult X',
+                supported: true,
+                actionType: 'copy_link',
+                actionValue: 'quantumult-x://import',
+                protocolHint: 'quantumultx',
+              ),
+              WebClientImportOptionData(
+                clientKey: 'surge',
+                displayName: 'Surge',
+                supported: true,
+                actionType: 'copy_link',
+                actionValue: 'surge://import',
+                protocolHint: 'surge',
+              ),
+            ];
+          },
         ),
       ),
     );
@@ -393,6 +400,15 @@ void main() {
     expect(find.text('Shadowrocket'), findsOneWidget);
     expect(find.text('Quantumult X'), findsOneWidget);
     expect(find.text('Surge'), findsOneWidget);
+    expect(importCalls['ios'], 1);
+
+    await tester.tap(find.text('Android'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(importCalls['android'], 1);
+
+    await tester.tap(find.text('iOS'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(importCalls['ios'], 1);
 
     await tester.ensureVisible(find.text('Surge'));
     await tester.pump(const Duration(milliseconds: 300));

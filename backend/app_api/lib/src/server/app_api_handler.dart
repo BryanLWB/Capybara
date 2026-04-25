@@ -1633,7 +1633,7 @@ class _AppApiService {
 
   String? _checkoutSourceOrigin(Request request) {
     final headerOrigin = _normalizedOrigin(request.headers['origin']);
-    if (headerOrigin != null) {
+    if (_isAllowedCheckoutOrigin(headerOrigin)) {
       return headerOrigin;
     }
 
@@ -1641,18 +1641,18 @@ class _AppApiService {
     final refererUri =
         headerReferer == null ? null : Uri.tryParse(headerReferer);
     final refererOrigin = _uriOrigin(refererUri);
-    if (refererOrigin != null) {
+    if (_isAllowedCheckoutOrigin(refererOrigin)) {
       return refererOrigin;
     }
 
-    return _uriOrigin(request.requestedUri);
+    return _originString(config.checkoutDefaultOrigin);
   }
 
   String? _checkoutSourceReferer(Request request) {
     final headerReferer = _trimmedOrNull(request.headers['referer']);
     final refererUri =
         headerReferer == null ? null : Uri.tryParse(headerReferer);
-    if (_uriOrigin(refererUri) != null) {
+    if (_isAllowedCheckoutOrigin(_uriOrigin(refererUri))) {
       return refererUri.toString();
     }
 
@@ -1670,6 +1670,25 @@ class _AppApiService {
     return _uriOrigin(uri);
   }
 
+  bool _isAllowedCheckoutOrigin(String? origin) {
+    final parsed = origin == null ? null : Uri.tryParse(origin);
+    if (parsed == null) {
+      return false;
+    }
+    return config.checkoutAllowedOrigins.any((allowed) {
+      if (allowed.scheme != parsed.scheme || allowed.host != parsed.host) {
+        return false;
+      }
+      if (allowed.hasPort) {
+        return parsed.hasPort && allowed.port == parsed.port;
+      }
+      if (allowed.host == 'localhost' || allowed.host == '127.0.0.1') {
+        return true;
+      }
+      return !parsed.hasPort;
+    });
+  }
+
   String? _uriOrigin(Uri? uri) {
     if (uri == null) return null;
     final scheme = uri.scheme.toLowerCase();
@@ -1677,6 +1696,13 @@ class _AppApiService {
       return null;
     }
     return '${uri.scheme}://${uri.authority}';
+  }
+
+  String? _originString(Uri? uri) {
+    if (uri == null) {
+      return null;
+    }
+    return _uriOrigin(uri);
   }
 
   List<Map<String, dynamic>> _mapInviteCodes(List rawCodes) {

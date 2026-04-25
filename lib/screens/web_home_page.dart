@@ -1097,7 +1097,6 @@ class _WebHomePageState extends State<WebHomePage> {
                     onTap: () {
                       setState(() {
                         _selectedPlatform = platform.keyName;
-                        _importOptionsFutures.remove(platform.keyName);
                       });
                     },
                   ),

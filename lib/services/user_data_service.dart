@@ -161,6 +161,8 @@ class UserDataService {
         'user': _userInfo!,
         'subscribe': _subscribeInfo!,
         'config': _commConfig!,
+        'plans': _plans!,
+        'notices': _notices!,
       };
     }
 
@@ -201,6 +203,8 @@ class UserDataService {
       'user': _userInfo!,
       'subscribe': _subscribeInfo!,
       'config': _commConfig!,
+      'plans': _plans!,
+      'notices': _notices!,
     };
   }
 

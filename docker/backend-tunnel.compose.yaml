@@ -10,6 +10,7 @@ services:
       UPSTREAM_BASE_URL: http://xboard-web:7001
       PORT: "8787"
       REDIS_URL: redis://redis:6379
+      CHECKOUT_ALLOWED_ORIGINS: ${CHECKOUT_ALLOWED_ORIGINS:-https://www.kapi-net.com,https://kapi-net.com,http://localhost,http://127.0.0.1}
     volumes:
       - ../backend/app_api:/app
     command: sh -lc "/usr/lib/dart/bin/dart pub get && exec /usr/lib/dart/bin/dart run bin/server.dart"

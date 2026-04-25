@@ -165,9 +165,17 @@ void main() {
     final data = await facade.loadHomeData();
 
     expect(api.webBootstrapCalls, 1);
+    expect(api.plansCalls, 0);
+    expect(api.noticesCalls, 0);
     expect(data.hasSubscription, isTrue);
     expect(data.totalBytes, 1024);
     expect(data.expiryAt, 1713256800);
+
+    await facade.loadHomeData(forceRefresh: true);
+
+    expect(api.webBootstrapCalls, 2);
+    expect(api.plansCalls, 0);
+    expect(api.noticesCalls, 0);
   });
 }
 
@@ -218,6 +226,8 @@ class _FakeAppApi extends AppApi {
   int _subscriptionFailuresRemaining;
   int subscriptionSummaryCalls = 0;
   int webBootstrapCalls = 0;
+  int plansCalls = 0;
+  int noticesCalls = 0;
 
   @override
   Future<Map<String, dynamic>> getOrders() async {
@@ -283,6 +293,7 @@ class _FakeAppApi extends AppApi {
 
   @override
   Future<Map<String, dynamic>> getPlans() async {
+    plansCalls += 1;
     return <String, dynamic>{
       'data': <String, dynamic>{
         'items': <Map<String, dynamic>>[
@@ -298,6 +309,7 @@ class _FakeAppApi extends AppApi {
 
   @override
   Future<Map<String, dynamic>> getNotices() async {
+    noticesCalls += 1;
     return <String, dynamic>{
       'data': <String, dynamic>{'items': <Map<String, dynamic>>[]},
     };

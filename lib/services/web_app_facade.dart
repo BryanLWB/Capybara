@@ -69,8 +69,14 @@ class WebAppFacade {
       subscription: Map<String, dynamic>.from(
         accountData['subscribe'] as Map? ?? const {},
       ),
-      plans: await _userDataService.getPlans(forceRefresh: forceRefresh),
-      notices: await _userDataService.getNotices(forceRefresh: forceRefresh),
+      plans: (accountData['plans'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(),
+      notices: (accountData['notices'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(),
     );
   }
 

@@ -22,6 +22,7 @@ void main() {
         upstreamTimeout: const Duration(seconds: 20),
         requestJitterBase: Duration.zero,
         requestJitterSpread: Duration.zero,
+        checkoutAllowedOrigins: ServiceConfig.parseCheckoutAllowedOrigins(null),
       ),
       sessionStore: sessionStore,
       upstreamApi: upstreamApi,
@@ -1514,6 +1515,34 @@ void main() {
       await checkout(<String, dynamic>{'type': -1, 'data': true}),
       containsPair('kind', 'completed'),
     );
+  });
+
+  test('checkout source ignores untrusted origins and defaults to web origin',
+      () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'POST',
+        Uri.parse(
+            'https://api.kapi-net.com/api/app/v1/commerce/orders/T20260414001/checkout'),
+        headers: <String, String>{
+          'authorization': 'Bearer ${session.id}',
+          'content-type': 'application/json',
+          'origin': 'https://evil.example.test',
+          'referer': 'https://evil.example.test/purchase',
+        },
+        body: jsonEncode(<String, dynamic>{'payment_method_id': 2}),
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    expect(upstreamApi.checkoutOrigin, 'https://www.kapi-net.com');
+    expect(upstreamApi.checkoutReferer, 'https://www.kapi-net.com/');
   });
 
   test('gift redeem returns ok only for upstream success payload', () async {
