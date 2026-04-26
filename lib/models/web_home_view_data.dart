@@ -74,6 +74,90 @@ class WebHomeViewData {
     );
   }
 
+  factory WebHomeViewData.fromAppApi(Map<String, dynamic> data) {
+    final account = Map<String, dynamic>.from(
+      data['account'] as Map? ?? const {},
+    );
+    final subscription = Map<String, dynamic>.from(
+      data['subscription'] as Map? ?? const {},
+    );
+    final plans = (data['plans'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final notices = (data['notices'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final planId = _toInt(account['plan_id'] ?? subscription['plan_id']);
+    final matchedPlan = plans.cast<Map<String, dynamic>?>().firstWhere(
+          (plan) => _toInt(plan?['plan_id']) == planId,
+          orElse: () => null,
+        );
+
+    return WebHomeViewData(
+      user: UserInfo(
+        email: account['email']?.toString() ?? '',
+        transferEnable: _toInt(account['transfer_bytes']),
+        expiredAt: _toInt(account['expiry_at']),
+        balance: _toInt(account['balance_amount']),
+        planId: planId,
+        avatarUrl: account['avatar_url']?.toString(),
+        uuid: account['user_ref']?.toString(),
+      ),
+      planName: matchedPlan?['title']?.toString() ?? '',
+      balance: _toInt(account['balance_amount']),
+      totalBytes: _toInt(subscription['total_bytes']),
+      usedBytes: _toInt(subscription['upload_bytes']) +
+          _toInt(subscription['download_bytes']),
+      uploadBytes: _toInt(subscription['upload_bytes']),
+      downloadBytes: _toInt(subscription['download_bytes']),
+      expiryAt: _toInt(subscription['expiry_at']),
+      resetDay: _toInt(subscription['reset_days']),
+      notices: notices
+          .map(WebNoticeViewData.fromAppApi)
+          .where((notice) => notice.title.isNotEmpty || notice.body.isNotEmpty)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
+    );
+  }
+
+  factory WebHomeViewData.fromJson(Map<String, dynamic> json) {
+    return WebHomeViewData(
+      user: UserInfo.fromJson(
+        Map<String, dynamic>.from(json['user'] as Map? ?? const {}),
+      ),
+      planName: json['plan_name']?.toString() ?? '',
+      balance: _toInt(json['balance']),
+      totalBytes: _toInt(json['total_bytes']),
+      usedBytes: _toInt(json['used_bytes']),
+      uploadBytes: _toInt(json['upload_bytes']),
+      downloadBytes: _toInt(json['download_bytes']),
+      expiryAt: _toInt(json['expiry_at']),
+      resetDay: _toInt(json['reset_day']),
+      notices: (json['notices'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => WebNoticeViewData.fromJson(
+                Map<String, dynamic>.from(item),
+              ))
+          .where((notice) => notice.title.isNotEmpty || notice.body.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'user': user.toJson(),
+        'plan_name': planName,
+        'balance': balance,
+        'total_bytes': totalBytes,
+        'used_bytes': usedBytes,
+        'upload_bytes': uploadBytes,
+        'download_bytes': downloadBytes,
+        'expiry_at': expiryAt,
+        'reset_day': resetDay,
+        'notices': notices.map((notice) => notice.toJson()).toList(),
+      };
+
   static int _toInt(Object? value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
@@ -107,6 +191,35 @@ class WebNoticeViewData {
       createdAt: WebHomeViewData._toInt(map['created_at']),
     );
   }
+
+  factory WebNoticeViewData.fromAppApi(Map<String, dynamic> map) {
+    final content = buildRichContentData(map['body']?.toString() ?? '');
+    return WebNoticeViewData(
+      id: WebHomeViewData._toInt(map['notice_id']),
+      title: contentTitle(map['headline']?.toString() ?? ''),
+      body: content.plainText,
+      bodyHtml: content.html,
+      createdAt: WebHomeViewData._toInt(map['created_at']),
+    );
+  }
+
+  factory WebNoticeViewData.fromJson(Map<String, dynamic> json) {
+    return WebNoticeViewData(
+      id: WebHomeViewData._toInt(json['id']),
+      title: json['title']?.toString() ?? '',
+      body: json['body']?.toString() ?? '',
+      bodyHtml: json['body_html']?.toString() ?? '',
+      createdAt: WebHomeViewData._toInt(json['created_at']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'title': title,
+        'body': body,
+        'body_html': bodyHtml,
+        'created_at': createdAt,
+      };
 
   static String contentTitle(String value) {
     if (value.isEmpty) return '';

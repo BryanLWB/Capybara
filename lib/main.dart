@@ -22,6 +22,7 @@ import 'services/panel_api.dart';
 import 'services/v2ray_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/asset_utils.dart';
+import 'utils/web_boot_ready.dart';
 import 'widgets/capybara_splash.dart';
 
 void main() async {
@@ -183,6 +184,7 @@ class _AuthGateState extends State<AuthGate> {
   final _config = ApiConfig();
   bool _authed = false;
   bool _isChecking = true;
+  bool _webReadyMarked = false;
   WebPaymentReturnData? _paymentReturnData;
   final _startTime = DateTime.now();
 
@@ -197,6 +199,7 @@ class _AuthGateState extends State<AuthGate> {
       _paymentReturnData = WebPaymentReturnData.tryParse(Uri.base);
       if (_paymentReturnData != null) {
         _isChecking = false;
+        _scheduleWebReady();
         return;
       }
     }
@@ -217,7 +220,6 @@ class _AuthGateState extends State<AuthGate> {
 
     if (kIsWeb) {
       await _finishAuthCheck(true);
-      unawaited(_validateWebSession());
       return;
     }
 
@@ -258,18 +260,16 @@ class _AuthGateState extends State<AuthGate> {
         _authed = authResult;
         _isChecking = false;
       });
+      _scheduleWebReady();
     }
   }
 
-  Future<void> _validateWebSession() async {
-    try {
-      await _api.getUserInfo();
-    } catch (_) {
-      await _config.clearAuth();
-      if (mounted) {
-        setState(() => _authed = false);
-      }
-    }
+  void _scheduleWebReady() {
+    if (!kIsWeb || _webReadyMarked) return;
+    _webReadyMarked = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      markWebFlutterReady();
+    });
   }
 
   @override
@@ -280,7 +280,7 @@ class _AuthGateState extends State<AuthGate> {
     // 检查中显示 Flutter 启动动画
     if (_isChecking) {
       if (kIsWeb) {
-        return const ColoredBox(color: Colors.black);
+        return const _WebStartupPlaceholder();
       }
       return const CapybaraSplash();
     }
@@ -301,6 +301,27 @@ class _AuthGateState extends State<AuthGate> {
     }
     return RootShell(
       onLogout: () => setState(() => _authed = false),
+    );
+  }
+}
+
+class _WebStartupPlaceholder extends StatelessWidget {
+  const _WebStartupPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFF05070B),
+      child: Center(
+        child: SizedBox(
+          width: 220,
+          child: LinearProgressIndicator(
+            minHeight: 2,
+            backgroundColor: Color(0x22FFFFFF),
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF64E5C4)),
+          ),
+        ),
+      ),
     );
   }
 }

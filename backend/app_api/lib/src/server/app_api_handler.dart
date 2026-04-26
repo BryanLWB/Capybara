@@ -353,6 +353,9 @@ class _AppApiService {
       return _error(
           'auth.required', 'Authentication required', HttpStatus.unauthorized);
     }
+    if (request.url.queryParameters['lite'] == 'home') {
+      return _webHomeBootstrap(session);
+    }
     return _withUpstreamGuard(() async {
       final auth = _toAuth(session);
       final accountFuture = _loadAccountBootstrapPayload(
@@ -366,6 +369,32 @@ class _AppApiService {
       final notices = await noticesFuture;
       return _ok(<String, dynamic>{
         ...payload.toJson(),
+        'plans': plans.map(_mapPlan).toList(),
+        'notices': notices.map(_mapNotice).toList(),
+      });
+    });
+  }
+
+  Future<Response> _webHomeBootstrap(SessionRecord session) async {
+    return _withUpstreamGuard(() async {
+      final auth = _toAuth(session);
+      final profileFuture = _fetchProfileData(session);
+      final summaryFuture = upstreamApi.fetchSubscriptionSummary(auth);
+      final plansFuture = upstreamApi.fetchPlans(auth);
+      final noticesFuture = upstreamApi.fetchNotices(auth);
+
+      final profile = await profileFuture;
+      final summary = await _loadSubscriptionPayload(
+        auth,
+        summaryFuture: summaryFuture,
+        fallbackProfileLoader: () async => profile,
+      );
+      final plans = await plansFuture;
+      final notices = await noticesFuture;
+
+      return _ok(<String, dynamic>{
+        'account': _mapAccount(profile),
+        'subscription': summary.subscription,
         'plans': plans.map(_mapPlan).toList(),
         'notices': notices.map(_mapNotice).toList(),
       });

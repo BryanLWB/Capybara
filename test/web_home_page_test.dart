@@ -14,6 +14,10 @@ import 'package:capybara/models/web_client_download.dart';
 import 'package:capybara/models/web_home_view_data.dart';
 import 'package:capybara/models/web_shell_section.dart';
 import 'package:capybara/screens/web_home_page.dart';
+import 'package:capybara/services/api_config.dart';
+import 'package:capybara/services/app_api.dart';
+import 'package:capybara/services/web_home_snapshot_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 WebHomeViewData _homeData({
   bool hasSubscription = false,
@@ -340,6 +344,110 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('web home renders cached snapshot while fresh data loads',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final freshCompleter = Completer<WebHomeViewData>();
+    final store = _MemoryHomeSnapshotStore(
+      cached: _homeData(
+        hasSubscription: true,
+        notices: const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 1,
+            'title': '缓存公告',
+            'content': '缓存内容',
+            'created_at': 1710000000,
+          },
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () {},
+          dataLoader: (_) => freshCompleter.future,
+          homeSnapshotStore: store,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('缓存公告'), findsOneWidget);
+    expect(find.byKey(const Key('web-home-loading-state')), findsNothing);
+
+    freshCompleter.complete(
+      _homeData(
+        hasSubscription: true,
+        notices: const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 2,
+            'title': '实时公告',
+            'content': '实时内容',
+            'created_at': 1710000300,
+          },
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('实时公告'), findsOneWidget);
+    expect(store.writes, hasLength(1));
+    expect(store.writes.single.latestNotice?.title, '实时公告');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web home clears snapshot on unauthorized refresh',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'app_session_token': 'as_test',
+    });
+    await ApiConfig().refreshSessionCache();
+    final store = _MemoryHomeSnapshotStore(
+      cached: _homeData(hasSubscription: true),
+    );
+    var unauthorized = false;
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () => unauthorized = true,
+          dataLoader: (_) => Future<WebHomeViewData>.error(
+            AppApiException(statusCode: 401, message: 'unauthorized'),
+          ),
+          homeSnapshotStore: store,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(store.cleared, isTrue);
+    expect(unauthorized, isTrue);
+    expect(await ApiConfig().getSessionToken(), isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('web home keeps all import options visible when subscribed',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
@@ -416,4 +524,27 @@ void main() {
     expect(find.text('Surge'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _MemoryHomeSnapshotStore extends WebHomeSnapshotStore {
+  _MemoryHomeSnapshotStore({this.cached}) : super(config: ApiConfig());
+
+  WebHomeViewData? cached;
+  final List<WebHomeViewData> writes = <WebHomeViewData>[];
+  bool cleared = false;
+
+  @override
+  Future<WebHomeViewData?> read() async => cached;
+
+  @override
+  Future<void> write(WebHomeViewData data) async {
+    writes.add(data);
+    cached = data;
+  }
+
+  @override
+  Future<void> clear() async {
+    cleared = true;
+    cached = null;
+  }
 }

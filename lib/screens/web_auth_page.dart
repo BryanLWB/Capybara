@@ -10,7 +10,6 @@ import '../utils/web_error_text.dart';
 import '../widgets/animated_background.dart';
 import '../widgets/capybara_loader.dart';
 import '../widgets/gradient_card.dart';
-import '../widgets/web_crisp_widget.dart';
 
 enum WebAuthMode { login, register, reset }
 
@@ -270,8 +269,6 @@ class _WebAuthPageState extends State<WebAuthPage> {
                 ),
               ),
             ),
-            const Positioned.fill(
-                child: IgnorePointer(child: WebCrispWidget())),
           ],
         ),
       ),

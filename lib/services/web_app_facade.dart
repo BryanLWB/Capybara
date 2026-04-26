@@ -1,5 +1,4 @@
 import '../models/help_article.dart';
-import '../models/user_info.dart';
 import '../models/web_account_view_data.dart';
 import '../models/web_client_download.dart';
 import '../models/web_client_import_option.dart';
@@ -10,7 +9,6 @@ import '../models/web_user_center_view_data.dart';
 import '../models/web_withdraw_config.dart';
 import 'api_config.dart';
 import 'app_api.dart';
-import 'user_data_service.dart';
 
 class PendingOrderExistsException implements Exception {
   const PendingOrderExistsException();
@@ -20,12 +18,9 @@ class WebAppFacade {
   WebAppFacade({
     AppApi? api,
     ApiConfig? config,
-    UserDataService? userDataService,
-  })  : _api = api ?? AppApi(config: config),
-        _userDataService = userDataService ?? UserDataService();
+  }) : _api = api ?? AppApi(config: config);
 
   final AppApi _api;
-  final UserDataService _userDataService;
 
   Future<List<HelpCategory>> loadHelpCategories(String language) async {
     final response = await _api.getHelpArticles(language: language);
@@ -61,23 +56,11 @@ class WebAppFacade {
   }
 
   Future<WebHomeViewData> loadHomeData({bool forceRefresh = false}) async {
-    final accountData = await _userDataService.getAccountPageData(
-      forceRefresh: forceRefresh,
+    final response = await _api.getWebHomeBootstrap();
+    final data = Map<String, dynamic>.from(
+      response['data'] as Map? ?? const {},
     );
-    return WebHomeViewData.fromSources(
-      user: accountData['user'] as UserInfo,
-      subscription: Map<String, dynamic>.from(
-        accountData['subscribe'] as Map? ?? const {},
-      ),
-      plans: (accountData['plans'] as List? ?? const [])
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList(),
-      notices: (accountData['notices'] as List? ?? const [])
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList(),
-    );
+    return WebHomeViewData.fromAppApi(data);
   }
 
   Future<String> createSubscriptionAccessLink({String? flag}) async {

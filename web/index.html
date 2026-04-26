@@ -31,6 +31,174 @@
 
   <title>Capybara</title>
   <link rel="manifest" href="manifest.json">
+  <link
+    rel="preload"
+    href="flutter_bootstrap.js"
+    as="script"
+    data-capybara-preload="bootstrap"
+  >
+  <link
+    rel="preload"
+    href="main.dart.js"
+    as="script"
+    data-capybara-preload="main"
+  >
+  <style>
+    :root {
+      color-scheme: dark;
+      --capybara-bg: #05070b;
+      --capybara-panel: rgba(12, 18, 27, 0.78);
+      --capybara-border: rgba(255, 255, 255, 0.12);
+      --capybara-text: #f4f7f5;
+      --capybara-muted: #93a19b;
+      --capybara-accent: #64e5c4;
+      --capybara-warm: #f0b86e;
+    }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      background: var(--capybara-bg);
+      color: var(--capybara-text);
+      font-family:
+        ui-sans-serif,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "PingFang SC",
+        "Microsoft YaHei",
+        sans-serif;
+    }
+
+    body {
+      overflow-x: hidden;
+    }
+
+    #capybara-pre-shell {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(100, 229, 196, 0.22), transparent 30%),
+        radial-gradient(circle at 82% 18%, rgba(240, 184, 110, 0.18), transparent 32%),
+        linear-gradient(135deg, #05070b 0%, #081119 52%, #030507 100%);
+      transition: opacity 180ms ease, visibility 180ms ease;
+    }
+
+    body.capybara-flutter-ready #capybara-pre-shell {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .pre-shell-card {
+      width: min(960px, 100%);
+      border: 1px solid var(--capybara-border);
+      border-radius: 34px;
+      background: var(--capybara-panel);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(20px);
+      padding: clamp(28px, 5vw, 56px);
+    }
+
+    .pre-shell-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--capybara-accent);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .pre-shell-kicker::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--capybara-accent);
+      box-shadow: 0 0 24px rgba(100, 229, 196, 0.92);
+    }
+
+    .pre-shell-title {
+      margin: 18px 0 0;
+      max-width: 720px;
+      font-size: clamp(38px, 8vw, 76px);
+      line-height: 0.95;
+      letter-spacing: -0.06em;
+    }
+
+    .pre-shell-copy {
+      margin: 22px 0 0;
+      max-width: 560px;
+      color: var(--capybara-muted);
+      font-size: clamp(15px, 2vw, 18px);
+      line-height: 1.7;
+    }
+
+    .pre-shell-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .pre-shell-pill {
+      border: 1px solid var(--capybara-border);
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: rgba(244, 247, 245, 0.82);
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .pre-shell-loader {
+      position: relative;
+      width: min(360px, 100%);
+      height: 3px;
+      margin-top: 40px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .pre-shell-loader::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      width: 42%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--capybara-accent), var(--capybara-warm));
+      animation: pre-shell-load 1.18s ease-in-out infinite;
+    }
+
+    @keyframes pre-shell-load {
+      0% {
+        transform: translateX(-120%);
+      }
+      100% {
+        transform: translateX(260%);
+      }
+    }
+
+    @media (max-width: 640px) {
+      #capybara-pre-shell {
+        padding: 18px;
+      }
+
+      .pre-shell-card {
+        border-radius: 26px;
+        padding: 28px;
+      }
+    }
+  </style>
 </head>
 <body>
   <form
@@ -43,6 +211,21 @@
     onsubmit="return false;"
     style="display: none;"
   ></form>
+  <section id="capybara-pre-shell" aria-live="polite">
+    <div class="pre-shell-card">
+      <div class="pre-shell-kicker">Capybara Web</div>
+      <h1 class="pre-shell-title">安全网络控制台正在打开</h1>
+      <p class="pre-shell-copy">
+        页面框架已就绪，正在加载 Web 控制台资源。已登录用户会先显示本机缓存内容，再同步最新账户数据。
+      </p>
+      <div class="pre-shell-row" aria-hidden="true">
+        <span class="pre-shell-pill">静态入口优先</span>
+        <span class="pre-shell-pill">后台同步账户</span>
+        <span class="pre-shell-pill">Cloudflare Pages</span>
+      </div>
+      <div class="pre-shell-loader" aria-hidden="true"></div>
+    </div>
+  </section>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -13,6 +14,7 @@ import '../services/api_config.dart';
 import '../services/app_api.dart';
 import '../services/panel_api.dart';
 import '../services/web_app_facade.dart';
+import '../services/web_home_snapshot_store.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
 import '../utils/web_error_text.dart';
@@ -40,6 +42,7 @@ class WebHomePage extends StatefulWidget {
     this.subscriptionLinkCreator,
     this.downloadsLoader,
     this.importOptionsLoader,
+    this.homeSnapshotStore,
   });
 
   final ValueChanged<WebShellSection> onNavigate;
@@ -48,6 +51,7 @@ class WebHomePage extends StatefulWidget {
   final WebSubscriptionAccessLinkCreator? subscriptionLinkCreator;
   final WebClientDownloadsLoader? downloadsLoader;
   final WebClientImportOptionsLoader? importOptionsLoader;
+  final WebHomeSnapshotStore? homeSnapshotStore;
 
   @override
   State<WebHomePage> createState() => _WebHomePageState();
@@ -56,6 +60,9 @@ class WebHomePage extends StatefulWidget {
 class _WebHomePageState extends State<WebHomePage> {
   final _facade = WebAppFacade();
   late Future<WebHomeViewData> _future;
+  late final WebHomeSnapshotStore? _homeSnapshotStore;
+  WebHomeViewData? _snapshotData;
+  bool _hasFreshData = false;
   String _selectedPlatform = 'ios';
   bool _quickActionBusy = false;
   Future<List<WebClientDownloadItem>>? _downloadsFuture;
@@ -73,7 +80,10 @@ class _WebHomePageState extends State<WebHomePage> {
   @override
   void initState() {
     super.initState();
-    _future = _load(false);
+    _homeSnapshotStore =
+        widget.homeSnapshotStore ?? (kIsWeb ? WebHomeSnapshotStore() : null);
+    _future = _loadAndCache(false);
+    _restoreSnapshot();
   }
 
   @override
@@ -90,6 +100,22 @@ class _WebHomePageState extends State<WebHomePage> {
     return _facade.loadHomeData(forceRefresh: forceRefresh);
   }
 
+  Future<WebHomeViewData> _loadAndCache([bool forceRefresh = false]) async {
+    final data = await _load(forceRefresh);
+    _hasFreshData = true;
+    final snapshotStore = _homeSnapshotStore;
+    if (snapshotStore != null) {
+      unawaited(snapshotStore.write(data));
+    }
+    return data;
+  }
+
+  Future<void> _restoreSnapshot() async {
+    final cached = await _homeSnapshotStore?.read();
+    if (!mounted || cached == null || _hasFreshData) return;
+    setState(() => _snapshotData = cached);
+  }
+
   bool _isChinese(BuildContext context) =>
       Localizations.localeOf(context).languageCode.toLowerCase().startsWith(
             'zh',
@@ -97,11 +123,22 @@ class _WebHomePageState extends State<WebHomePage> {
 
   void _handleUnauthorized() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _homeSnapshotStore?.clear();
       await ApiConfig().clearAuth();
       if (mounted) {
         widget.onUnauthorized();
       }
     });
+  }
+
+  bool _isUnauthorized(Object? error) {
+    if (error is PanelApiException) {
+      return error.statusCode == 401 || error.statusCode == 403;
+    }
+    if (error is AppApiException) {
+      return error.statusCode == 401 || error.statusCode == 403;
+    }
+    return false;
   }
 
   Future<String> _createAccessLink() async {
@@ -424,10 +461,13 @@ class _WebHomePageState extends State<WebHomePage> {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           final error = snapshot.error;
-          if (error is PanelApiException &&
-              (error.statusCode == 401 || error.statusCode == 403)) {
+          if (_isUnauthorized(error)) {
             _handleUnauthorized();
             return const Center(child: CapybaraLoader());
+          }
+          final cached = _snapshotData;
+          if (cached != null) {
+            return _buildHomeContent(context, isChinese, cached);
           }
           return _buildErrorState(
             context,
@@ -440,75 +480,83 @@ class _WebHomePageState extends State<WebHomePage> {
           );
         }
 
-        if (!snapshot.hasData) {
+        final data = snapshot.data ?? _snapshotData;
+        if (data == null) {
           return _buildLoadingState(context, isChinese);
         }
 
-        final data = snapshot.data!;
-        _syncNoticeRotation(data.notices);
-        final width = MediaQuery.of(context).size.width;
-        final isWide = WebLayoutMetrics.useWidePanels(width);
-        final isMedium = WebLayoutMetrics.useMediumGrid(width);
-        final compact = WebLayoutMetrics.compact(width);
-        return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {
-              _future = _load(true);
-              _importOptionsFutures.clear();
-            });
-            await _future;
-          },
-          child: WebPageFrame(
-            maxWidth: 1520,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildNoticeCard(context, data, isChinese),
-                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
-                _buildSubscriptionCard(context, data, isChinese),
-                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
-                if (isWide)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _buildQuickUsageSection(
-                          context,
-                          isChinese,
-                          hasSubscription: data.hasSubscription,
-                          dense: true,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildQuickLinksSection(
-                          context,
-                          isChinese,
-                          true,
-                          dense: true,
-                        ),
-                      ),
-                    ],
-                  )
-                else ...[
-                  _buildQuickUsageSection(
-                    context,
-                    isChinese,
-                    hasSubscription: data.hasSubscription,
-                    dense: compact,
+        return _buildHomeContent(context, isChinese, data);
+      },
+    );
+  }
+
+  Widget _buildHomeContent(
+    BuildContext context,
+    bool isChinese,
+    WebHomeViewData data,
+  ) {
+    _syncNoticeRotation(data.notices);
+    final width = MediaQuery.of(context).size.width;
+    final isWide = WebLayoutMetrics.useWidePanels(width);
+    final isMedium = WebLayoutMetrics.useMediumGrid(width);
+    final compact = WebLayoutMetrics.compact(width);
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {
+          _future = _loadAndCache(true);
+          _importOptionsFutures.clear();
+        });
+        await _future;
+      },
+      child: WebPageFrame(
+        maxWidth: 1520,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildNoticeCard(context, data, isChinese),
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+            _buildSubscriptionCard(context, data, isChinese),
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildQuickUsageSection(
+                      context,
+                      isChinese,
+                      hasSubscription: data.hasSubscription,
+                      dense: true,
+                    ),
                   ),
-                  SizedBox(height: WebLayoutMetrics.sectionGap(width)),
-                  _buildQuickLinksSection(
-                    context,
-                    isChinese,
-                    isMedium,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildQuickLinksSection(
+                      context,
+                      isChinese,
+                      true,
+                      dense: true,
+                    ),
                   ),
                 ],
-              ],
-            ),
-          ),
-        );
-      },
+              )
+            else ...[
+              _buildQuickUsageSection(
+                context,
+                isChinese,
+                hasSubscription: data.hasSubscription,
+                dense: compact,
+              ),
+              SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+              _buildQuickLinksSection(
+                context,
+                isChinese,
+                isMedium,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 

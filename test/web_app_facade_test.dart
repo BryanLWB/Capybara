@@ -3,10 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:capybara/models/web_purchase_view_data.dart';
 import 'package:capybara/services/api_config.dart';
 import 'package:capybara/services/app_api.dart';
-import 'package:capybara/services/panel_api.dart';
-import 'package:capybara/services/user_data_service.dart';
 import 'package:capybara/services/web_app_facade.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   final plan = WebPlanViewData(
@@ -151,20 +148,17 @@ void main() {
   });
 
   test('loadHomeData uses bootstrap route for home payload', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
     final api = _FakeAppApi();
     final config = ApiConfig();
     final facade = WebAppFacade(
       api: api,
       config: config,
-      userDataService: UserDataService.withApi(
-        PanelApi(config: config, appApi: api),
-      ),
     );
 
     final data = await facade.loadHomeData();
 
-    expect(api.webBootstrapCalls, 1);
+    expect(api.webHomeBootstrapCalls, 1);
+    expect(api.webBootstrapCalls, 0);
     expect(api.plansCalls, 0);
     expect(api.noticesCalls, 0);
     expect(data.hasSubscription, isTrue);
@@ -173,7 +167,8 @@ void main() {
 
     await facade.loadHomeData(forceRefresh: true);
 
-    expect(api.webBootstrapCalls, 2);
+    expect(api.webHomeBootstrapCalls, 2);
+    expect(api.webBootstrapCalls, 0);
     expect(api.plansCalls, 0);
     expect(api.noticesCalls, 0);
   });
@@ -226,6 +221,7 @@ class _FakeAppApi extends AppApi {
   int _subscriptionFailuresRemaining;
   int subscriptionSummaryCalls = 0;
   int webBootstrapCalls = 0;
+  int webHomeBootstrapCalls = 0;
   int plansCalls = 0;
   int noticesCalls = 0;
 
@@ -318,6 +314,16 @@ class _FakeAppApi extends AppApi {
   @override
   Future<Map<String, dynamic>> getWebBootstrap() async {
     webBootstrapCalls += 1;
+    return _webBootstrapPayload(includeConfig: true);
+  }
+
+  @override
+  Future<Map<String, dynamic>> getWebHomeBootstrap() async {
+    webHomeBootstrapCalls += 1;
+    return _webBootstrapPayload(includeConfig: false);
+  }
+
+  Map<String, dynamic> _webBootstrapPayload({required bool includeConfig}) {
     return <String, dynamic>{
       'data': <String, dynamic>{
         'account': <String, dynamic>{
@@ -327,7 +333,7 @@ class _FakeAppApi extends AppApi {
           'balance_amount': 0,
           'plan_id': 1,
         },
-        'config': <String, dynamic>{},
+        if (includeConfig) 'config': <String, dynamic>{},
         'subscription': <String, dynamic>{
           'upload_bytes': 10,
           'download_bytes': 20,

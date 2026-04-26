@@ -41,6 +41,10 @@ if ! grep -q 'src="flutter_bootstrap.js"' "${index_file}"; then
 fi
 perl -0pi -e 's/src="flutter_bootstrap\.js"/src="flutter_bootstrap.js?v='"${build_id}"'"/' \
   "${index_file}"
+perl -0pi -e 's/href="flutter_bootstrap\.js"/href="flutter_bootstrap.js?v='"${build_id}"'"/' \
+  "${index_file}"
+perl -0pi -e 's/href="main\.dart\.js"/href="main.dart.js?v='"${build_id}"'"/' \
+  "${index_file}"
 
 headers_file="${ROOT_DIR}/web/_headers"
 if [[ ! -f "${headers_file}" ]]; then
@@ -52,5 +56,9 @@ cp "${headers_file}" "${ROOT_DIR}/build/web/_headers"
 mkdir -p "${ROOT_DIR}/build/web/payment-icons"
 cp "${ROOT_DIR}"/deploy/test-server/static/payment-icons/*.svg \
   "${ROOT_DIR}/build/web/payment-icons/"
+
+rm -f \
+  "${ROOT_DIR}/build/web/assets/assets/bin/geoip.dat" \
+  "${ROOT_DIR}/build/web/assets/assets/bin/geosite.dat"
 
 echo "Web release build is ready at ${ROOT_DIR}/build/web"

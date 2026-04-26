@@ -277,6 +277,38 @@ void main() {
     expect(upstreamApi.fetchNoticesCalls, 1);
   });
 
+  test('web home bootstrap lite skips user config fetch', () async {
+    final session = await sessionStore.create(
+      upstreamToken: 'upstream-token',
+      upstreamAuth: 'Bearer upstream-auth',
+      ownerKey: 'email:u@example.com',
+      ttl: const Duration(hours: 1),
+    );
+
+    final response = await handler(
+      Request(
+        'GET',
+        Uri.parse('http://localhost/api/app/v1/web/bootstrap?lite=home'),
+        headers: <String, String>{'authorization': 'Bearer ${session.id}'},
+      ),
+    );
+
+    expect(response.statusCode, 200);
+    final payload =
+        jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+    final data = payload['data'] as Map<String, dynamic>;
+    expect(data['account'], isA<Map<String, dynamic>>());
+    expect(data['subscription'], isA<Map<String, dynamic>>());
+    expect(data.containsKey('config'), isFalse);
+    expect(data['plans'], isA<List<dynamic>>());
+    expect(data['notices'], isA<List<dynamic>>());
+    expect(upstreamApi.fetchUserProfileCalls, 1);
+    expect(upstreamApi.fetchUserConfigCalls, 0);
+    expect(upstreamApi.fetchSubscriptionSummaryCalls, 1);
+    expect(upstreamApi.fetchPlansCalls, 1);
+    expect(upstreamApi.fetchNoticesCalls, 1);
+  });
+
   test('help knowledge list is grouped by category', () async {
     final session = await sessionStore.create(
       upstreamToken: 'upstream-token',

@@ -370,6 +370,13 @@ class AppApi {
     return _get('/web/bootstrap');
   }
 
+  Future<Map<String, dynamic>> getWebHomeBootstrap() {
+    return _get(
+      '/web/bootstrap',
+      query: const <String, String>{'lite': 'home'},
+    );
+  }
+
   Future<void> logout() async {
     final response = await _delete('/session/current');
     if (response.statusCode >= 400) {
