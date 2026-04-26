@@ -47,19 +47,28 @@ perl -0pi -e 's/href="flutter_bootstrap\.js"/href="flutter_bootstrap.js?v='"${bu
 perl -0pi -e 's/href="main\.dart\.js"/href="main.dart.js?v='"${build_id}"'"/' \
   "${index_file}"
 
-perl -0pi -e 's/_flutter\.loader\.load\(\{/_flutter.loader.load({\n  config: {\n    fontFallbackBaseUrl: "font-fallback\/",\n  },/' \
+font_fallback_base_path="font-fallback/${build_id}"
+perl -0pi -e 's#_flutter\.loader\.load\(\{#_flutter.loader.load({\n  config: {\n    fontFallbackBaseUrl: "'"${font_fallback_base_path}"'/",\n  },#' \
   "${bootstrap_file}"
 
-font_fallback_root="${ROOT_DIR}/build/web/font-fallback"
+rm -rf "${ROOT_DIR}/build/web/font-fallback"
+font_fallback_root="${ROOT_DIR}/build/web/${font_fallback_base_path}"
+main_js_file="${ROOT_DIR}/build/web/main.dart.js"
 font_fallback_files=(
   "roboto/v32/KFOmCnqEu92Fr1Me4GZLCzYlKw.woff2"
-  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.113.woff2"
-  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.115.woff2"
-  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.116.woff2"
-  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.117.woff2"
-  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.118.woff2"
-  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.119.woff2"
 )
+
+while IFS= read -r font_fallback_file; do
+  font_fallback_files+=("${font_fallback_file}")
+done < <(
+  grep -Eo 'notosanssc/v[0-9]+/[^"]+\.woff2' "${main_js_file}" \
+    | sort -u
+)
+
+if [[ "${#font_fallback_files[@]}" -le 1 ]]; then
+  echo "Failed to find Noto Sans SC fallback font shards in ${main_js_file}." >&2
+  exit 1
+fi
 
 for font_fallback_file in "${font_fallback_files[@]}"; do
   font_fallback_target="${font_fallback_root}/${font_fallback_file}"
