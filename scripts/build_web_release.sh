@@ -14,6 +14,7 @@ build_args=(
   build
   web
   --no-wasm-dry-run
+  --no-web-resources-cdn
   "--dart-define=APP_CONFIG_URLS=${APP_CONFIG_URLS}"
 )
 
@@ -45,6 +46,28 @@ perl -0pi -e 's/href="flutter_bootstrap\.js"/href="flutter_bootstrap.js?v='"${bu
   "${index_file}"
 perl -0pi -e 's/href="main\.dart\.js"/href="main.dart.js?v='"${build_id}"'"/' \
   "${index_file}"
+
+perl -0pi -e 's/_flutter\.loader\.load\(\{/_flutter.loader.load({\n  config: {\n    fontFallbackBaseUrl: "font-fallback\/",\n  },/' \
+  "${bootstrap_file}"
+
+font_fallback_root="${ROOT_DIR}/build/web/font-fallback"
+font_fallback_files=(
+  "roboto/v32/KFOmCnqEu92Fr1Me4GZLCzYlKw.woff2"
+  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.113.woff2"
+  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.115.woff2"
+  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.116.woff2"
+  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.117.woff2"
+  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.118.woff2"
+  "notosanssc/v37/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.119.woff2"
+)
+
+for font_fallback_file in "${font_fallback_files[@]}"; do
+  font_fallback_target="${font_fallback_root}/${font_fallback_file}"
+  mkdir -p "$(dirname "${font_fallback_target}")"
+  curl -fsSL \
+    "https://fonts.gstatic.com/s/${font_fallback_file}" \
+    -o "${font_fallback_target}"
+done
 
 headers_file="${ROOT_DIR}/web/_headers"
 if [[ ! -f "${headers_file}" ]]; then

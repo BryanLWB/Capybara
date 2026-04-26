@@ -16,6 +16,9 @@
 /canvaskit/*
   Cache-Control: public, max-age=31536000, immutable
 
+/font-fallback/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /icons/*
   Cache-Control: public, max-age=31536000, immutable
 
