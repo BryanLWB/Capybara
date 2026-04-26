@@ -2395,26 +2395,43 @@ class _OutlineAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedCard(
-      onTap: onTap,
-      enableBreathing: selected,
-      borderRadius: 18,
-      hoverScale: 1.01,
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      baseBorderColor: selected ? AppColors.accent : AppColors.border,
-      hoverBorderColor: AppColors.accent,
-      gradientColors: [
-        selected
-            ? AppColors.accent.withValues(alpha: 0.12)
-            : AppColors.surface.withValues(alpha: 0.2),
-        AppColors.surfaceAlt.withValues(alpha: 0.4),
-      ],
-      child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: selected
+                    ? AppColors.accent.withValues(alpha: 0.82)
+                    : AppColors.border.withValues(alpha: 0.95),
+                width: selected ? 1.2 : 1,
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  selected
+                      ? AppColors.accent.withValues(alpha: 0.10)
+                      : AppColors.surface.withValues(alpha: 0.36),
+                  AppColors.surfaceAlt.withValues(alpha: 0.64),
+                ],
+              ),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ),
         ),
       ),
