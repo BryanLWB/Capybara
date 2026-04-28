@@ -1,10 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
   static ThemeData dark() {
     final base = ThemeData.dark(useMaterial3: true);
+    const displayFont = TextStyle(
+      fontFamilyFallback: <String>[
+        'Space Grotesk',
+        'DM Sans',
+        'PingFang SC',
+        'Microsoft YaHei',
+        'Noto Sans CJK SC',
+        'sans-serif',
+      ],
+    );
+    const bodyFont = TextStyle(
+      fontFamilyFallback: <String>[
+        'DM Sans',
+        'PingFang SC',
+        'Microsoft YaHei',
+        'Noto Sans CJK SC',
+        'sans-serif',
+      ],
+    );
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.background,
       colorScheme: base.colorScheme.copyWith(
@@ -13,27 +31,32 @@ class AppTheme {
         surface: AppColors.surface,
         error: AppColors.danger,
       ),
-      textTheme: GoogleFonts.dmSansTextTheme(base.textTheme).copyWith(
-        displayLarge: GoogleFonts.spaceGrotesk(
-          fontSize: 28,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        displayMedium: GoogleFonts.spaceGrotesk(
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        titleMedium: GoogleFonts.spaceGrotesk(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        bodyMedium: GoogleFonts.dmSans(
-          fontSize: 14,
-          color: AppColors.textSecondary,
-        ),
-      ),
+      textTheme: base.textTheme
+          .apply(
+            bodyColor: AppColors.textSecondary,
+            displayColor: AppColors.textPrimary,
+          )
+          .copyWith(
+            displayLarge: displayFont.copyWith(
+              fontSize: 28,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+            displayMedium: displayFont.copyWith(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+            titleMedium: displayFont.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+            bodyMedium: bodyFont.copyWith(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
       dividerColor: AppColors.border,
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.surface,

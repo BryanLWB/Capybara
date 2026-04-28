@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -13,6 +14,7 @@ import '../services/api_config.dart';
 import '../services/app_api.dart';
 import '../services/panel_api.dart';
 import '../services/web_app_facade.dart';
+import '../services/web_home_snapshot_store.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
 import '../utils/web_error_text.dart';
@@ -40,6 +42,7 @@ class WebHomePage extends StatefulWidget {
     this.subscriptionLinkCreator,
     this.downloadsLoader,
     this.importOptionsLoader,
+    this.homeSnapshotStore,
   });
 
   final ValueChanged<WebShellSection> onNavigate;
@@ -48,6 +51,7 @@ class WebHomePage extends StatefulWidget {
   final WebSubscriptionAccessLinkCreator? subscriptionLinkCreator;
   final WebClientDownloadsLoader? downloadsLoader;
   final WebClientImportOptionsLoader? importOptionsLoader;
+  final WebHomeSnapshotStore? homeSnapshotStore;
 
   @override
   State<WebHomePage> createState() => _WebHomePageState();
@@ -56,8 +60,14 @@ class WebHomePage extends StatefulWidget {
 class _WebHomePageState extends State<WebHomePage> {
   final _facade = WebAppFacade();
   late Future<WebHomeViewData> _future;
+  late final WebHomeSnapshotStore? _homeSnapshotStore;
+  WebHomeViewData? _snapshotData;
+  bool _hasFreshData = false;
   String _selectedPlatform = 'ios';
   bool _quickActionBusy = false;
+  Future<List<WebClientDownloadItem>>? _downloadsFuture;
+  final Map<String, Future<String>> _subscriptionLinkFutures =
+      <String, Future<String>>{};
   final Map<String, Future<List<WebClientImportOptionData>>>
       _importOptionsFutures =
       <String, Future<List<WebClientImportOptionData>>>{};
@@ -70,7 +80,10 @@ class _WebHomePageState extends State<WebHomePage> {
   @override
   void initState() {
     super.initState();
-    _future = _load(false);
+    _homeSnapshotStore =
+        widget.homeSnapshotStore ?? (kIsWeb ? WebHomeSnapshotStore() : null);
+    _future = _loadAndCache(false);
+    _restoreSnapshot();
   }
 
   @override
@@ -87,6 +100,22 @@ class _WebHomePageState extends State<WebHomePage> {
     return _facade.loadHomeData(forceRefresh: forceRefresh);
   }
 
+  Future<WebHomeViewData> _loadAndCache([bool forceRefresh = false]) async {
+    final data = await _load(forceRefresh);
+    _hasFreshData = true;
+    final snapshotStore = _homeSnapshotStore;
+    if (snapshotStore != null) {
+      unawaited(snapshotStore.write(data));
+    }
+    return data;
+  }
+
+  Future<void> _restoreSnapshot() async {
+    final cached = await _homeSnapshotStore?.read();
+    if (!mounted || cached == null || _hasFreshData) return;
+    setState(() => _snapshotData = cached);
+  }
+
   bool _isChinese(BuildContext context) =>
       Localizations.localeOf(context).languageCode.toLowerCase().startsWith(
             'zh',
@@ -94,6 +123,7 @@ class _WebHomePageState extends State<WebHomePage> {
 
   void _handleUnauthorized() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _homeSnapshotStore?.clear();
       await ApiConfig().clearAuth();
       if (mounted) {
         widget.onUnauthorized();
@@ -101,19 +131,52 @@ class _WebHomePageState extends State<WebHomePage> {
     });
   }
 
+  bool _isUnauthorized(Object? error) {
+    if (error is PanelApiException) {
+      return error.statusCode == 401 || error.statusCode == 403;
+    }
+    if (error is AppApiException) {
+      return error.statusCode == 401 || error.statusCode == 403;
+    }
+    return false;
+  }
+
   Future<String> _createAccessLink() async {
     final flag = _flagForPlatform(_selectedPlatform);
-    if (widget.subscriptionLinkCreator != null) {
-      return widget.subscriptionLinkCreator!(flag);
-    }
-    return _facade.createSubscriptionAccessLink(flag: flag);
+    return _subscriptionLinkFutures.putIfAbsent(flag, () async {
+      try {
+        final link = widget.subscriptionLinkCreator != null
+            ? await widget.subscriptionLinkCreator!(flag)
+            : await _facade.createSubscriptionAccessLink(flag: flag);
+        if (link.isEmpty) {
+          _subscriptionLinkFutures.remove(flag);
+        }
+        return link;
+      } catch (_) {
+        _subscriptionLinkFutures.remove(flag);
+        rethrow;
+      }
+    });
   }
 
   Future<List<WebClientDownloadItem>> _loadDownloads() async {
-    if (widget.downloadsLoader != null) {
-      return widget.downloadsLoader!();
+    final existing = _downloadsFuture;
+    if (existing != null) {
+      return existing;
     }
-    return _facade.loadClientDownloads();
+    final future = () async {
+      try {
+        if (widget.downloadsLoader != null) {
+          return await widget.downloadsLoader!();
+        }
+        return await _facade.loadClientDownloads();
+      } catch (_) {
+        _downloadsFuture = null;
+        rethrow;
+      }
+    }();
+    _downloadsFuture = future;
+    return future;
   }
 
   Future<List<WebClientImportOptionData>> _loadImportOptions(
@@ -398,10 +461,13 @@ class _WebHomePageState extends State<WebHomePage> {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           final error = snapshot.error;
-          if (error is PanelApiException &&
-              (error.statusCode == 401 || error.statusCode == 403)) {
+          if (_isUnauthorized(error)) {
             _handleUnauthorized();
             return const Center(child: CapybaraLoader());
+          }
+          final cached = _snapshotData;
+          if (cached != null) {
+            return _buildHomeContent(context, isChinese, cached);
           }
           return _buildErrorState(
             context,
@@ -414,75 +480,219 @@ class _WebHomePageState extends State<WebHomePage> {
           );
         }
 
-        if (!snapshot.hasData) {
-          return const Center(child: CapybaraLoader(showTips: true));
+        final data = snapshot.data ?? _snapshotData;
+        if (data == null) {
+          return _buildLoadingState(context, isChinese);
         }
 
-        final data = snapshot.data!;
-        _syncNoticeRotation(data.notices);
-        final width = MediaQuery.of(context).size.width;
-        final isWide = WebLayoutMetrics.useWidePanels(width);
-        final isMedium = WebLayoutMetrics.useMediumGrid(width);
-        final compact = WebLayoutMetrics.compact(width);
-        return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {
-              _future = _load(true);
-              _importOptionsFutures.clear();
-            });
-            await _future;
-          },
-          child: WebPageFrame(
-            maxWidth: 1520,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildNoticeCard(context, data, isChinese),
-                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
-                _buildSubscriptionCard(context, data, isChinese),
-                SizedBox(height: WebLayoutMetrics.sectionGap(width)),
-                if (isWide)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _buildQuickUsageSection(
-                          context,
-                          isChinese,
-                          hasSubscription: data.hasSubscription,
-                          dense: true,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildQuickLinksSection(
-                          context,
-                          isChinese,
-                          true,
-                          dense: true,
-                        ),
-                      ),
-                    ],
-                  )
-                else ...[
-                  _buildQuickUsageSection(
-                    context,
-                    isChinese,
-                    hasSubscription: data.hasSubscription,
-                    dense: compact,
+        return _buildHomeContent(context, isChinese, data);
+      },
+    );
+  }
+
+  Widget _buildHomeContent(
+    BuildContext context,
+    bool isChinese,
+    WebHomeViewData data,
+  ) {
+    _syncNoticeRotation(data.notices);
+    final width = MediaQuery.of(context).size.width;
+    final isWide = WebLayoutMetrics.useWidePanels(width);
+    final isMedium = WebLayoutMetrics.useMediumGrid(width);
+    final compact = WebLayoutMetrics.compact(width);
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {
+          _future = _loadAndCache(true);
+          _importOptionsFutures.clear();
+        });
+        await _future;
+      },
+      child: WebPageFrame(
+        maxWidth: 1520,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildNoticeCard(context, data, isChinese),
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+            _buildSubscriptionCard(context, data, isChinese),
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildQuickUsageSection(
+                      context,
+                      isChinese,
+                      hasSubscription: data.hasSubscription,
+                      dense: true,
+                    ),
                   ),
-                  SizedBox(height: WebLayoutMetrics.sectionGap(width)),
-                  _buildQuickLinksSection(
-                    context,
-                    isChinese,
-                    isMedium,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildQuickLinksSection(
+                      context,
+                      isChinese,
+                      true,
+                      dense: true,
+                    ),
                   ),
                 ],
+              )
+            else ...[
+              _buildQuickUsageSection(
+                context,
+                isChinese,
+                hasSubscription: data.hasSubscription,
+                dense: compact,
+              ),
+              SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+              _buildQuickLinksSection(
+                context,
+                isChinese,
+                isMedium,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context, bool isChinese) {
+    final width = MediaQuery.of(context).size.width;
+    final isWide = WebLayoutMetrics.useWidePanels(width);
+    final compact = WebLayoutMetrics.compact(width);
+
+    return WebPageFrame(
+      key: const Key('web-home-loading-state'),
+      maxWidth: 1520,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLoadingCard(
+            context,
+            title: isChinese ? '公告' : 'Notices',
+            subtitle: isChinese
+                ? '页面已经可用，正在同步实时公告。'
+                : 'The page is ready. Syncing the latest notices.',
+            lines: const [0.42, 0.88, 0.72],
+          ),
+          SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+          _buildLoadingCard(
+            context,
+            title: isChinese ? '订阅概览' : 'Subscription overview',
+            subtitle: isChinese
+                ? '套餐、流量与到期时间会在后台同步。'
+                : 'Plan, traffic, and expiry data are loading in the background.',
+            lines: const [0.3, 0.64, 0.48, 0.82],
+          ),
+          SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+          if (isWide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _buildLoadingCard(
+                    context,
+                    title: isChinese ? '快速开始' : 'Quick start',
+                    lines:
+                        compact ? const [0.74, 0.64] : const [0.84, 0.7, 0.56],
+                    showLoader: false,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildLoadingCard(
+                    context,
+                    title: isChinese ? '常用入口' : 'Quick links',
+                    lines:
+                        compact ? const [0.76, 0.66] : const [0.8, 0.68, 0.6],
+                    showLoader: false,
+                  ),
+                ),
               ],
+            )
+          else ...[
+            _buildLoadingCard(
+              context,
+              title: isChinese ? '快速开始' : 'Quick start',
+              lines: compact ? const [0.74, 0.64] : const [0.84, 0.7, 0.56],
+              showLoader: false,
+            ),
+            SizedBox(height: WebLayoutMetrics.sectionGap(width)),
+            _buildLoadingCard(
+              context,
+              title: isChinese ? '常用入口' : 'Quick links',
+              lines: compact ? const [0.76, 0.66] : const [0.8, 0.68, 0.6],
+              showLoader: false,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingCard(
+    BuildContext context, {
+    required String title,
+    required List<double> lines,
+    String? subtitle,
+    bool showLoader = true,
+  }) {
+    final children = <Widget>[
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
-        );
-      },
+          if (showLoader) const CapybaraLoader(size: 20),
+        ],
+      ),
+      if (subtitle != null) ...[
+        const SizedBox(height: 10),
+        Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppColors.textSecondary,
+              ),
+        ),
+      ],
+      const SizedBox(height: 20),
+    ];
+
+    for (var i = 0; i < lines.length; i++) {
+      children.add(_buildLoadingLine(lines[i]));
+      if (i != lines.length - 1) {
+        children.add(const SizedBox(height: 12));
+      }
+    }
+
+    return GradientCard(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildLoadingLine(double widthFactor) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 14,
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.border),
+        ),
+      ),
     );
   }
 
@@ -935,7 +1145,6 @@ class _WebHomePageState extends State<WebHomePage> {
                     onTap: () {
                       setState(() {
                         _selectedPlatform = platform.keyName;
-                        _importOptionsFutures.remove(platform.keyName);
                       });
                     },
                   ),

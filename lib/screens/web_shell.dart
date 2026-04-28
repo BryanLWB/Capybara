@@ -7,11 +7,11 @@ import '../models/web_shell_section.dart';
 import '../models/web_user_subpage.dart';
 import '../services/api_config.dart';
 import '../services/web_app_facade.dart';
+import '../services/web_home_snapshot_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/animated_card.dart';
 import '../widgets/animated_background.dart';
 import '../widgets/gradient_card.dart';
-import '../widgets/web_crisp_widget.dart';
 import '../widgets/web_layout_metrics.dart';
 import 'web_account_page.dart';
 import 'web_help_page.dart';
@@ -81,6 +81,7 @@ class _WebShellState extends State<WebShell> {
     } catch (_) {
       // Local logout must proceed even if the server session is already gone.
     } finally {
+      await WebHomeSnapshotStore().clear();
       await ApiConfig().clearAuth();
       if (mounted) {
         widget.onLogout();
@@ -326,7 +327,6 @@ class _WebShellState extends State<WebShell> {
               ],
             ),
           ),
-          const Positioned.fill(child: IgnorePointer(child: WebCrispWidget())),
         ],
       ),
     );

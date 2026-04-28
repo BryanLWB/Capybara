@@ -28,4 +28,14 @@ class UserInfo {
       uuid: json['uuid'],
     );
   }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'email': email,
+        'transfer_enable': transferEnable,
+        'expired_at': expiredAt,
+        'balance': balance,
+        'plan_id': planId,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
+        if (uuid != null) 'uuid': uuid,
+      };
 }

@@ -9,6 +9,7 @@ class ServiceConfig {
     required this.upstreamTimeout,
     required this.requestJitterBase,
     required this.requestJitterSpread,
+    required this.checkoutAllowedOrigins,
   });
 
   final Uri upstreamBaseUri;
@@ -18,6 +19,10 @@ class ServiceConfig {
   final Duration upstreamTimeout;
   final Duration requestJitterBase;
   final Duration requestJitterSpread;
+  final List<Uri> checkoutAllowedOrigins;
+
+  Uri? get checkoutDefaultOrigin =>
+      checkoutAllowedOrigins.isEmpty ? null : checkoutAllowedOrigins.first;
 
   factory ServiceConfig.fromEnvironment() {
     final base = Platform.environment['UPSTREAM_BASE_URL'] ??
@@ -51,6 +56,29 @@ class ServiceConfig {
             ) ??
             250,
       ),
+      checkoutAllowedOrigins: parseCheckoutAllowedOrigins(
+        Platform.environment['CHECKOUT_ALLOWED_ORIGINS'],
+      ),
     );
+  }
+
+  static List<Uri> parseCheckoutAllowedOrigins(String? raw) {
+    final values = (raw == null || raw.trim().isEmpty)
+        ? const <String>[
+            'https://www.kapi-net.com',
+            'https://kapi-net.com',
+            'http://localhost',
+            'http://127.0.0.1',
+          ]
+        : raw.split(',');
+    return values
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .map(Uri.tryParse)
+        .whereType<Uri>()
+        .where((uri) =>
+            (uri.scheme == 'http' || uri.scheme == 'https') &&
+            uri.host.isNotEmpty)
+        .toList(growable: false);
   }
 }

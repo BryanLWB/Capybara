@@ -71,7 +71,13 @@ class _WebHelpPageState extends State<WebHelpPage> {
             'zh',
           );
 
-  String _languageTag(BuildContext context) => 'zh-CN';
+  String _languageTag(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    if (locale.languageCode.toLowerCase().startsWith('zh')) {
+      return 'zh-CN';
+    }
+    return 'en-US';
+  }
 
   Future<List<HelpCategory>> _loadCategories(String language) async {
     if (widget.categoriesLoader != null) {

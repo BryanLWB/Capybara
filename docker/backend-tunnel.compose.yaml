@@ -1,0 +1,114 @@
+services:
+  app-api:
+    image: dart:stable
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      - xboard-web
+      - redis
+    environment:
+      UPSTREAM_BASE_URL: http://xboard-web:7001
+      PORT: "8787"
+      REDIS_URL: redis://redis:6379
+      CHECKOUT_ALLOWED_ORIGINS: ${CHECKOUT_ALLOWED_ORIGINS:-https://www.kapi-net.com,https://kapi-net.com,http://localhost,http://127.0.0.1}
+    volumes:
+      - ../backend/app_api:/app
+    command: sh -lc "/usr/lib/dart/bin/dart pub get && exec /usr/lib/dart/bin/dart run bin/server.dart"
+
+  xboard-web:
+    image: ghcr.io/cedar2025/xboard:new
+    restart: unless-stopped
+    working_dir: /www
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - docker=true
+    volumes:
+      - ../upstreams/xboard:/www
+      - ../.runtime/backend/xboard.env:/www/.env
+      - ../.local/xboard-admin-assets:/www/public/assets/admin:ro
+      - ../scripts:/codex-scripts:ro
+      - xboard-redis-data:/data
+    command: sh -lc "php /codex-scripts/xboard_sync_settings.php >/dev/null 2>&1 || true; exec php artisan octane:start --port=7001 --host=0.0.0.0"
+
+  xboard-horizon:
+    image: ghcr.io/cedar2025/xboard:new
+    restart: unless-stopped
+    working_dir: /www
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - docker=true
+    volumes:
+      - ../upstreams/xboard:/www
+      - ../.runtime/backend/xboard.env:/www/.env
+      - xboard-redis-data:/data
+    command: php artisan horizon
+
+  xboard-ws-server:
+    image: ghcr.io/cedar2025/xboard:new
+    restart: unless-stopped
+    working_dir: /www
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - docker=true
+    volumes:
+      - ../upstreams/xboard:/www
+      - ../.runtime/backend/xboard.env:/www/.env
+      - xboard-redis-data:/data
+    command: php artisan ws-server start --host=0.0.0.0 --port=8076
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - xboard-mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --port 6379 --unixsocket /data/redis.sock --unixsocketperm 777
+    volumes:
+      - xboard-redis-data:/data
+    sysctls:
+      net.core.somaxconn: 1024
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - app-api
+      - xboard-web
+      - xboard-ws-server
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN}
+
+volumes:
+  xboard-mysql-data:
+  xboard-redis-data:

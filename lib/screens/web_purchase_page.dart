@@ -267,10 +267,10 @@ class _WebPurchasePageState extends State<WebPurchasePage> {
                           ? 2
                           : 1;
                   final mainAxisExtent = crossAxisCount == 1
-                      ? (width >= 640 ? 356.0 : 366.0)
+                      ? (width >= 640 ? 392.0 : 404.0)
                       : width >= 1180
-                          ? 356.0
-                          : 368.0;
+                          ? 392.0
+                          : 404.0;
 
                   return GridView.builder(
                     shrinkWrap: true,
@@ -1722,11 +1722,14 @@ class _PlanCard extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: compact ? 12 : 14),
-          _OutlineAction(
-            label: isChinese ? '立即购买' : 'Purchase Now',
-            selected: selected,
-            onTap: onTap,
+          SizedBox(height: compact ? 14 : 16),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _OutlineAction(
+              label: isChinese ? '立即购买' : 'Purchase Now',
+              selected: selected,
+              onTap: onTap,
+            ),
           ),
         ],
       ),
@@ -2401,13 +2404,38 @@ class _OutlineAction extends StatelessWidget {
       borderRadius: 18,
       hoverScale: 1.01,
       padding: const EdgeInsets.symmetric(vertical: 14),
-      baseBorderColor: selected ? AppColors.accent : AppColors.border,
+      baseBorderColor: selected
+          ? AppColors.accent.withValues(alpha: 0.82)
+          : AppColors.border.withValues(alpha: 0.95),
       hoverBorderColor: AppColors.accent,
       gradientColors: [
         selected
             ? AppColors.accent.withValues(alpha: 0.12)
             : AppColors.surface.withValues(alpha: 0.2),
         AppColors.surfaceAlt.withValues(alpha: 0.4),
+      ],
+      baseBoxShadows: [
+        BoxShadow(
+          color: selected
+              ? AppColors.accent.withValues(alpha: 0.16)
+              : Colors.black.withValues(alpha: 0.22),
+          blurRadius: selected ? 24 : 18,
+          spreadRadius: selected ? -2 : -4,
+          offset: const Offset(0, 8),
+        ),
+      ],
+      hoverBoxShadows: [
+        BoxShadow(
+          color: AppColors.accent.withValues(alpha: 0.20),
+          blurRadius: 28,
+          spreadRadius: -2,
+          offset: const Offset(0, 10),
+        ),
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.24),
+          blurRadius: 18,
+          offset: const Offset(0, 8),
+        ),
       ],
       child: Center(
         child: Text(

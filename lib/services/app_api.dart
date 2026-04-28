@@ -134,6 +134,10 @@ class AppApi {
     return _get('/account/profile');
   }
 
+  Future<Map<String, dynamic>> getAccountBootstrap() {
+    return _get('/account/bootstrap');
+  }
+
   Future<Map<String, dynamic>> getSubscriptionSummary() {
     return _get('/account/subscription');
   }
@@ -359,6 +363,17 @@ class AppApi {
     return _get(
       '/client/import-options',
       query: <String, String>{'platform': platform},
+    );
+  }
+
+  Future<Map<String, dynamic>> getWebBootstrap() {
+    return _get('/web/bootstrap');
+  }
+
+  Future<Map<String, dynamic>> getWebHomeBootstrap() {
+    return _get(
+      '/web/bootstrap',
+      query: const <String, String>{'lite': 'home'},
     );
   }
 

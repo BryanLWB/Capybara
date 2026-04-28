@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,10 @@ import 'package:capybara/models/web_client_download.dart';
 import 'package:capybara/models/web_home_view_data.dart';
 import 'package:capybara/models/web_shell_section.dart';
 import 'package:capybara/screens/web_home_page.dart';
+import 'package:capybara/services/api_config.dart';
+import 'package:capybara/services/app_api.dart';
+import 'package:capybara/services/web_home_snapshot_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 WebHomeViewData _homeData({
   bool hasSubscription = false,
@@ -196,6 +201,8 @@ void main() {
 
     WebShellSection? navigatedSection;
     String? requestedFlag;
+    var creatorCalls = 0;
+    var downloadsCalls = 0;
     String? clipboardText;
     const link = 'http://127.0.0.1:8787/api/app/v1/client/subscription/cl_test';
 
@@ -214,7 +221,6 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, null);
     });
-
     await tester.pumpWidget(
       _desktopHost(
         WebHomePage(
@@ -223,16 +229,20 @@ void main() {
           dataLoader: (_) =>
               SynchronousFuture(_homeData(hasSubscription: true)),
           subscriptionLinkCreator: (flag) async {
+            creatorCalls += 1;
             requestedFlag = flag;
             return link;
           },
-          downloadsLoader: () async => const <WebClientDownloadItem>[
-            WebClientDownloadItem(
-              platform: 'ios',
-              label: 'iOS',
-              available: false,
-            ),
-          ],
+          downloadsLoader: () async {
+            downloadsCalls += 1;
+            return const <WebClientDownloadItem>[
+              WebClientDownloadItem(
+                platform: 'ios',
+                label: 'iOS',
+                available: false,
+              ),
+            ];
+          },
         ),
       ),
     );
@@ -251,12 +261,16 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(link), findsOneWidget);
+    expect(creatorCalls, 1);
     await tester.tap(find.text('关闭'));
     await tester.pump(const Duration(milliseconds: 300));
 
     await tester.tap(find.text('下载客户端'));
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('下载客户端'));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(navigatedSection, WebShellSection.help);
+    expect(downloadsCalls, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -293,15 +307,157 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('web home keeps all import options visible when subscribed',
+  testWidgets('web home renders static loading frame before data resolves',
       (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.physicalSize = const Size(1440, 1600);
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
 
+    final completer = Completer<WebHomeViewData>();
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () {},
+          dataLoader: (_) => completer.future,
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byKey(const Key('web-home-loading-state')), findsOneWidget);
+    expect(find.text('公告'), findsOneWidget);
+    expect(find.text('订阅概览'), findsOneWidget);
+    expect(find.text('快速开始'), findsOneWidget);
+
+    completer.complete(_homeData(hasSubscription: true));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const Key('web-home-loading-state')), findsNothing);
+    expect(find.text('流量使用'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web home renders cached snapshot while fresh data loads',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final freshCompleter = Completer<WebHomeViewData>();
+    final store = _MemoryHomeSnapshotStore(
+      cached: _homeData(
+        hasSubscription: true,
+        notices: const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 1,
+            'title': '缓存公告',
+            'content': '缓存内容',
+            'created_at': 1710000000,
+          },
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () {},
+          dataLoader: (_) => freshCompleter.future,
+          homeSnapshotStore: store,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('缓存公告'), findsOneWidget);
+    expect(find.byKey(const Key('web-home-loading-state')), findsNothing);
+
+    freshCompleter.complete(
+      _homeData(
+        hasSubscription: true,
+        notices: const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 2,
+            'title': '实时公告',
+            'content': '实时内容',
+            'created_at': 1710000300,
+          },
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('实时公告'), findsOneWidget);
+    expect(store.writes, hasLength(1));
+    expect(store.writes.single.latestNotice?.title, '实时公告');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web home clears snapshot on unauthorized refresh',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'app_session_token': 'as_test',
+    });
+    await ApiConfig().refreshSessionCache();
+    final store = _MemoryHomeSnapshotStore(
+      cached: _homeData(hasSubscription: true),
+    );
+    var unauthorized = false;
+
+    await tester.pumpWidget(
+      _desktopHost(
+        WebHomePage(
+          onNavigate: (_) {},
+          onUnauthorized: () => unauthorized = true,
+          dataLoader: (_) => Future<WebHomeViewData>.error(
+            AppApiException(statusCode: 401, message: 'unauthorized'),
+          ),
+          homeSnapshotStore: store,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(store.cleared, isTrue);
+    expect(unauthorized, isTrue);
+    expect(await ApiConfig().getSessionToken(), isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('web home keeps all import options visible when subscribed',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1200);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final importCalls = <String, int>{};
     await tester.pumpWidget(
       _desktopHost(
         WebHomePage(
@@ -309,32 +465,39 @@ void main() {
           onUnauthorized: () {},
           dataLoader: (_) =>
               SynchronousFuture(_homeData(hasSubscription: true)),
-          importOptionsLoader: (_) async => const <WebClientImportOptionData>[
-            WebClientImportOptionData(
-              clientKey: 'shadowrocket',
-              displayName: 'Shadowrocket',
-              supported: true,
-              actionType: 'deep_link',
-              actionValue: 'shadowrocket://import',
-              protocolHint: 'shadowrocket',
-            ),
-            WebClientImportOptionData(
-              clientKey: 'quantumultx',
-              displayName: 'Quantumult X',
-              supported: true,
-              actionType: 'copy_link',
-              actionValue: 'quantumult-x://import',
-              protocolHint: 'quantumultx',
-            ),
-            WebClientImportOptionData(
-              clientKey: 'surge',
-              displayName: 'Surge',
-              supported: true,
-              actionType: 'copy_link',
-              actionValue: 'surge://import',
-              protocolHint: 'surge',
-            ),
-          ],
+          importOptionsLoader: (platform) async {
+            importCalls.update(
+              platform,
+              (value) => value + 1,
+              ifAbsent: () => 1,
+            );
+            return const <WebClientImportOptionData>[
+              WebClientImportOptionData(
+                clientKey: 'shadowrocket',
+                displayName: 'Shadowrocket',
+                supported: true,
+                actionType: 'deep_link',
+                actionValue: 'shadowrocket://import',
+                protocolHint: 'shadowrocket',
+              ),
+              WebClientImportOptionData(
+                clientKey: 'quantumultx',
+                displayName: 'Quantumult X',
+                supported: true,
+                actionType: 'copy_link',
+                actionValue: 'quantumult-x://import',
+                protocolHint: 'quantumultx',
+              ),
+              WebClientImportOptionData(
+                clientKey: 'surge',
+                displayName: 'Surge',
+                supported: true,
+                actionType: 'copy_link',
+                actionValue: 'surge://import',
+                protocolHint: 'surge',
+              ),
+            ];
+          },
         ),
       ),
     );
@@ -345,6 +508,15 @@ void main() {
     expect(find.text('Shadowrocket'), findsOneWidget);
     expect(find.text('Quantumult X'), findsOneWidget);
     expect(find.text('Surge'), findsOneWidget);
+    expect(importCalls['ios'], 1);
+
+    await tester.tap(find.text('Android'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(importCalls['android'], 1);
+
+    await tester.tap(find.text('iOS'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(importCalls['ios'], 1);
 
     await tester.ensureVisible(find.text('Surge'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -352,4 +524,27 @@ void main() {
     expect(find.text('Surge'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _MemoryHomeSnapshotStore extends WebHomeSnapshotStore {
+  _MemoryHomeSnapshotStore({this.cached}) : super(config: ApiConfig());
+
+  WebHomeViewData? cached;
+  final List<WebHomeViewData> writes = <WebHomeViewData>[];
+  bool cleared = false;
+
+  @override
+  Future<WebHomeViewData?> read() async => cached;
+
+  @override
+  Future<void> write(WebHomeViewData data) async {
+    writes.add(data);
+    cached = data;
+  }
+
+  @override
+  Future<void> clear() async {
+    cleared = true;
+    cached = null;
+  }
 }
