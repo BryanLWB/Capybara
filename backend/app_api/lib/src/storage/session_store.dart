@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -274,6 +275,7 @@ class RedisSessionStore implements SessionStore {
       'app_api:subscription_generation:';
   static const String _subscriptionOwnerPrefix = 'app_api:subscription_owner:';
   final RedisClient _client;
+  Future<void> _operationQueue = Future<void>.value();
 
   @override
   Future<SessionRecord> create({
@@ -291,49 +293,55 @@ class RedisSessionStore implements SessionStore {
       createdAt: now,
       expiresAt: now.add(ttl),
     );
-    await _client.setex(
-      '$_prefix${record.id}',
-      jsonEncode(record.toJson()),
-      ttl.inSeconds,
+    await _runExclusive(
+      () => _client.setex(
+        '$_prefix${record.id}',
+        jsonEncode(record.toJson()),
+        ttl.inSeconds,
+      ),
     );
     return record;
   }
 
   @override
   Future<void> delete(String sessionId) async {
-    await _client.delete(['$_prefix$sessionId']);
+    await _runExclusive(() => _client.delete(['$_prefix$sessionId']));
   }
 
   @override
   Future<SessionRecord?> read(String sessionId) async {
-    final value = await _client.get('$_prefix$sessionId');
-    if (value == null || value.toString().isEmpty) {
-      return null;
-    }
-    final decoded = jsonDecode(value.toString());
-    if (decoded is! Map<String, dynamic>) {
-      return null;
-    }
-    final record = SessionRecord.fromJson(decoded);
-    if (record.isExpired) {
-      await delete(sessionId);
-      return null;
-    }
-    return record;
+    return _runExclusive(() async {
+      final value = await _client.get('$_prefix$sessionId');
+      if (value == null || value.toString().isEmpty) {
+        return null;
+      }
+      final decoded = jsonDecode(value.toString());
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+      final record = SessionRecord.fromJson(decoded);
+      if (record.isExpired) {
+        await _client.delete(['$_prefix$sessionId']);
+        return null;
+      }
+      return record;
+    });
   }
 
   @override
   Future<void> write(SessionRecord record) async {
     final ttl = record.expiresAt.difference(DateTime.now().toUtc()).inSeconds;
-    if (ttl <= 0) {
-      await delete(record.id);
-      return;
-    }
-    await _client.setex(
-      '$_prefix${record.id}',
-      jsonEncode(record.toJson()),
-      ttl,
-    );
+    await _runExclusive(() async {
+      if (ttl <= 0) {
+        await _client.delete(['$_prefix${record.id}']);
+        return;
+      }
+      await _client.setex(
+        '$_prefix${record.id}',
+        jsonEncode(record.toJson()),
+        ttl,
+      );
+    });
   }
 
   @override
@@ -356,63 +364,74 @@ class RedisSessionStore implements SessionStore {
       createdAt: now,
       expiresAt: now.add(ttl),
     );
-    await _client.setex(
-      '$_subscriptionPrefix${record.id}',
-      jsonEncode(record.toJson()),
-      ttl.inSeconds,
-    );
-    final accessIds = await _readOwnerAccessIds(ownerKey)
-      ..add(record.id);
-    await _writeOwnerAccessIds(ownerKey, accessIds);
+    await _runExclusive(() async {
+      await _client.setex(
+        '$_subscriptionPrefix${record.id}',
+        jsonEncode(record.toJson()),
+        ttl.inSeconds,
+      );
+      final accessIds = await _readOwnerAccessIds(ownerKey)
+        ..add(record.id);
+      await _writeOwnerAccessIds(ownerKey, accessIds);
+    });
     return record;
   }
 
   @override
   Future<SubscriptionAccessRecord?> readSubscriptionAccess(
       String accessId) async {
-    final key = '$_subscriptionPrefix$accessId';
-    final value = await _client.get(key);
-    if (value == null || value.toString().isEmpty) {
-      return null;
-    }
-    final decoded = jsonDecode(value.toString());
-    if (decoded is! Map<String, dynamic>) {
-      return null;
-    }
-    final record = SubscriptionAccessRecord.fromJson(decoded);
-    if (record.isExpired) {
-      await _client.delete([key]);
-      final accessIds = await _readOwnerAccessIds(record.ownerKey)
-        ..remove(record.id);
-      await _writeOwnerAccessIds(record.ownerKey, accessIds);
-      return null;
-    }
-    return record;
+    return _runExclusive(() async {
+      final key = '$_subscriptionPrefix$accessId';
+      final value = await _client.get(key);
+      if (value == null || value.toString().isEmpty) {
+        return null;
+      }
+      final decoded = jsonDecode(value.toString());
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+      final record = SubscriptionAccessRecord.fromJson(decoded);
+      if (record.isExpired) {
+        await _client.delete([key]);
+        final accessIds = await _readOwnerAccessIds(record.ownerKey)
+          ..remove(record.id);
+        await _writeOwnerAccessIds(record.ownerKey, accessIds);
+        return null;
+      }
+      return record;
+    });
   }
 
   @override
   Future<int> readSubscriptionGeneration(String ownerKey) async {
-    final value = await _client.get('$_subscriptionGenerationPrefix$ownerKey');
-    if (value == null || value.toString().isEmpty) {
-      return 0;
-    }
-    return int.tryParse(value.toString()) ?? 0;
+    return _runExclusive(() async {
+      final value =
+          await _client.get('$_subscriptionGenerationPrefix$ownerKey');
+      if (value == null || value.toString().isEmpty) {
+        return 0;
+      }
+      return int.tryParse(value.toString()) ?? 0;
+    });
   }
 
   @override
   Future<int> bumpSubscriptionGeneration(String ownerKey) async {
-    return _client.incr('$_subscriptionGenerationPrefix$ownerKey');
+    return _runExclusive(
+      () => _client.incr('$_subscriptionGenerationPrefix$ownerKey'),
+    );
   }
 
   @override
   Future<void> revokeSubscriptionAccesses(String ownerKey) async {
-    final accessIds = await _readOwnerAccessIds(ownerKey);
-    if (accessIds.isNotEmpty) {
-      await _client.delete(
-        accessIds.map((id) => '$_subscriptionPrefix$id').toList(),
-      );
-    }
-    await _client.delete(['$_subscriptionOwnerPrefix$ownerKey']);
+    await _runExclusive(() async {
+      final accessIds = await _readOwnerAccessIds(ownerKey);
+      if (accessIds.isNotEmpty) {
+        await _client.delete(
+          accessIds.map((id) => '$_subscriptionPrefix$id').toList(),
+        );
+      }
+      await _client.delete(['$_subscriptionOwnerPrefix$ownerKey']);
+    });
   }
 
   Future<List<String>> _readOwnerAccessIds(String ownerKey) async {
@@ -436,6 +455,19 @@ class RedisSessionStore implements SessionStore {
       return _client.delete([key]);
     }
     return _client.set(key, jsonEncode(accessIds));
+  }
+
+  Future<T> _runExclusive<T>(Future<T> Function() operation) {
+    final previous = _operationQueue;
+    final gate = Completer<void>();
+    _operationQueue = gate.future;
+    return previous.catchError((_) {}).then((_) async {
+      try {
+        return await operation();
+      } finally {
+        gate.complete();
+      }
+    });
   }
 }
 
